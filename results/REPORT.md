@@ -398,3 +398,40 @@ Sharpe 0.27, zero dependență de piață.
 redundanță. Construcția unui portofoliu multi-edge funcționează când
 fiecare sleeve e un edge real, validat OOS, iar contribuția independentă e
 demonstrată, nu presupusă. NU este consiliere de investiții.
+
+---
+
+## Al cincilea edge: Amihud illiquidity (market-neutral, independent)
+
+Long illiquid / short liquid (|randament|/volum-dolari). Folosește
+dimensiunea volum, neexploatată până acum. Familie nouă.
+
+### Validare (full vs OOS, beta-hedge, consistență)
+- Raw: full Sharpe 0.87, OOS 1.01 (consistent), market beta doar +0.12.
+- Beta-hedged: full 0.70, OOS 0.82 -> alpha PUR, nu beta.
+- Corelație (hedged) la Rev10/Rev3/TOM/VolMgd: +0.07/-0.10/+0.07/+0.14
+  -> genuin independent.
+- Consistență pe treimi (hedged): +0.57 / +1.51 / -0.05 -> DECADE în
+  ultima treime (probabil arbitrat). Avertizare onestă.
+
+### Portofoliu OOS (inverse-vol weights din train 60%)
+| Portofoliu | Sharpe | ret | DD |
+|---|---|---|---|
+| COMBO-4 (fără Amihud) | +0.92 | +19% | -8% |
+| **COMBO-5 (+Amihud)** | **+1.21** | +26% | -9% |
+| MN-only Rev10+Rev3 | +0.27 | +4% | -10% |
+| **MN-only +Amihud** | **+0.84** | +17% | -12% |
+
+### Constatare
+Amihud ridică COMBO-5 la OOS Sharpe 1.21, dar câștigul principal e pe
+portofoliul de ALPHA PUR (market-neutral): MN-only sare de la 0.27 la 0.84
+adăugând Amihud, fără să introducă dependență de piață. Exact ținta: mai
+multă alpha, mai puțin beta. Avertizare: Amihud decade în ultima treime.
+
+### Concluzie (5 edge-uri)
+Portofoliul final: 3 market-neutral (Rev10, Rev3, Amihud) + 2 timing
+(TOM, VolMgd). 107 teste. Fiecare edge validat OOS și demonstrat
+independent (corelații + orthogonalize). Disciplina contează: am respins
+PreHoliday (eșantion minuscul) și HS-weekday (full 0.38 vs OOS 1.16 =
+noroc de regim), am păstrat Amihud pe consistență full~=OOS. NU este
+consiliere de investiții.
