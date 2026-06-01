@@ -435,3 +435,40 @@ independent (corelații + orthogonalize). Disciplina contează: am respins
 PreHoliday (eșantion minuscul) și HS-weekday (full 0.38 vs OOS 1.16 =
 noroc de regim), am păstrat Amihud pe consistență full~=OOS. NU este
 consiliere de investiții.
+
+---
+
+## Al șaselea edge: residual momentum (market-neutral, hedge pentru Amihud)
+
+Momentum pe randamente reziduale (curățate de beta) -- Blitz-Huij-Martens.
+Long winners idiosincratici / short losers. Familie nouă.
+
+### Validare
+- full Sharpe 0.37, OOS 0.52 (consistent), market corr -0.10 (neutral).
+- Consistență pe treimi: +0.44 / +0.48 / +0.18 -> POZITIV în TOATE
+  (cel mai consistent edge din proiect).
+- Corelații: Rev10 -0.12, Rev3 +0.03, TOM -0.08, VolMgd -0.04,
+  Amihud **-0.41** -> negativ corelat cu Amihud, îl hedge-uiește.
+
+### Portofoliu OOS (același window, comparație corectă)
+| Portofoliu | Sharpe | DD |
+|---|---|---|
+| COMBO-5 (fără ResMom) | +0.73 | -9% |
+| COMBO-6 (toate) | +0.79 | -8% |
+| MN-only 3 alphas | +0.22 | -12% |
+| MN-only +ResMom (4 alphas) | +0.27 | -12% |
+
+### Onestitate: sensibilitate la fereastră
+ResMom necesită ~147 zile warmup -> scurtează fereastra comună, deci
+numerele COMBO scad față de rulările anterioare (artefact de aliniere, nu
+regres). Comparația corectă e pe ACELAȘI window: 0.73->0.79. ResMom
+standalone variază 0.09-0.52 după window -> edge-urile mici pe 5 ani sunt
+zgomotoase; analiza pe sub-perioade (toate pozitive) e mai de încredere
+decât un singur OOS. Valoarea lui: consistență + hedge pentru decay-ul
+Amihud.
+
+### Concluzie (6 edge-uri)
+Portofoliul final: 4 market-neutral (Rev10, Rev3, Amihud, ResMom) + 2
+timing (TOM, VolMgd). 112 teste. ResMom adaugă valoare incrementală
+modestă (0.73->0.79) dar e cel mai robust pe sub-perioade și
+diversifică direct Amihud. NU este consiliere de investiții.
