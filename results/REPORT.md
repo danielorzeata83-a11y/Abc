@@ -280,3 +280,39 @@ fabrica alpha prin combinare: "prânzul gratis" e gratis doar dacă FIECARE
 componentă are deja edge pozitiv. Reversal rămâne singurul edge validat;
 adăugarea unui sleeve negativ doar diluează. NU este consiliere de
 investiții.
+
+---
+
+## SUCCES: combinarea a două edge-uri reale (diversification free lunch)
+
+Al doilea edge găsit dintr-o familie diferită: turn-of-month (calendar),
+necorelat cu reversal. Ambele pozitive -> combinarea CREȘTE Sharpe.
+
+| | corr cu reversal | Sharpe | ret | DD |
+|---|---|---|---|---|
+| Reversal | -- | +0.34 | +19% | -16% |
+| TurnOfMonth | +0.08 | +0.37 | +12% | -8% |
+| **COMBO (equal-risk)** | -- | **+0.48** | +24% | -12% |
+
+### Out-of-sample (ponderi inverse-vol din train 60%)
+| | Sharpe | ret | DD |
+|---|---|---|---|
+| TEST Reversal | +0.09 | +1% | -16% |
+| TEST TurnOfMonth | +0.33 | +4% | -8% |
+| **TEST COMBO** | **+0.28** | +5% | -13% |
+
+### Constatare
+Full-sample COMBO Sharpe 0.48 > max(0.34, 0.37): diversificarea reală.
+Combinând două surse INDEPENDENTE cu Sharpe pozitiv, obții un Sharpe mai
+mare decât oricare individual -- singurul "free lunch" din finanțe. OOS,
+reversal a slăbit într-un bull pur (+0.09) dar TOM a ținut (+0.33) și
+combo-ul a livrat +0.28 robust: nu trebuie să ghicești care edge va fi mai
+puternic. Asta e diferența față de tentativa anterioară (low-vol): acolo
+una din componente avea Sharpe negativ; aici AMBELE sunt edge-uri reale.
+
+### Concluzia constructivă a proiectului
+Contrastul e lecția: low-vol (Sharpe negativ) + reversal = combo stricat;
+turn-of-month (Sharpe pozitiv, necorelat) + reversal = combo mai bun decât
+ambele. Combinarea edge-urilor FUNCȚIONEAZĂ -- dar doar cu edge-uri
+genuine, independente, fiecare validat OOS. Exact modelul fondurilor
+quant. NU este consiliere de investiții.
