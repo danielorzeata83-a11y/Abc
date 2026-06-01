@@ -16,6 +16,11 @@ NAMED_UNIVERSES = {
         "CSCO", "ORCL", "IBM", "ADBE", "CRM", "QCOM", "TXN", "AVGO",
         "AMD", "MU", "ADI", "AMAT", "LRCX", "NFLX", "ADSK", "INTU",
     ],
+    # Liquid crypto assets (Coin Metrics symbols, lowercase).
+    "CRYPTO": [
+        "btc", "eth", "ltc", "xrp", "bch", "ada", "doge", "sol",
+        "etc", "xlm", "link", "uni", "aave", "mkr",
+    ],
 }
 
 
@@ -27,6 +32,22 @@ def _read_file(path):
             if line and not line.startswith("#"):
                 out.append(line.upper())
     return out
+
+
+def candidate_tickers(spec):
+    """Explicit tickers for a spec without needing the data, or None.
+
+    Named universes, comma lists and @files yield an explicit list; "SP500"
+    (meaning "everything available") returns None since it can't be
+    enumerated without the data.
+    """
+    if spec.upper() == "SP500":
+        return None
+    if spec.upper() in NAMED_UNIVERSES:
+        return list(NAMED_UNIVERSES[spec.upper()])
+    if spec.startswith("@"):
+        return _read_file(spec[1:])
+    return [s.strip() for s in spec.split(",") if s.strip()]
 
 
 def resolve_universe(spec, available):

@@ -56,3 +56,30 @@ def test_live_provider_offline_raises_clear_error():
     prov = get_provider("stooq")
     with pytest.raises(DataUnavailable):
         prov.fetch(["NVDA"])
+
+
+def test_coinmetrics_parse_extracts_price_and_volume():
+    from markov.data_providers import parse_coinmetrics_csv
+    df = pd.DataFrame({
+        "time": ["2021-01-01", "2021-01-02", "2021-01-03"],
+        "PriceUSD": [100.0, 110.0, np.nan],
+        "VolTrustedSpotUSD": [5.0, 6.0, 7.0],
+    })
+    close, vol = parse_coinmetrics_csv(df)
+    # Row with NaN price is dropped.
+    assert list(close.values) == [100.0, 110.0]
+    assert list(vol.values) == [5.0, 6.0]
+    assert close.name == "close" and vol.name == "volume"
+
+
+def test_coinmetrics_parse_missing_volume_returns_nan():
+    from markov.data_providers import parse_coinmetrics_csv
+    df = pd.DataFrame({"time": ["2021-01-01"], "PriceUSD": [100.0]})
+    close, vol = parse_coinmetrics_csv(df)
+    assert close.iloc[0] == 100.0
+    assert np.isnan(vol.iloc[0])
+
+
+def test_get_provider_coinmetrics():
+    from markov.data_providers import CoinMetricsProvider
+    assert isinstance(get_provider("coinmetrics"), CoinMetricsProvider)

@@ -10,6 +10,8 @@ Panel convention: prices and volume have shape (T, N); decisions at day t
 use data up to t only.
 """
 
+import warnings
+
 import numpy as np
 
 
@@ -23,7 +25,9 @@ def illiquidity_scores(prices, volume, t=None, window=20):
     rets = prices[t - window + 1:t + 1] / prices[t - window:t] - 1.0
     dollar = prices[seg] * volume[seg]
     illiq = np.abs(rets) / np.where(dollar > 0, dollar, np.nan)
-    return np.nanmean(illiq, axis=0)
+    with warnings.catch_warnings():  # all-NaN columns (patchy volume) -> NaN
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanmean(illiq, axis=0)
 
 
 def xs_amihud_returns(prices, volume, window=20, holding=21, top_frac=0.1,

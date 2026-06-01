@@ -67,17 +67,18 @@ class _LiveProvider:
     def fetch(self, tickers):
         if not tickers:
             raise ValueError("live providers require an explicit ticker list")
-        frames = {}
+        frames, skipped = {}, []
         for t in tickers:
             try:
                 frames[t] = self._fetch_one(t)
-            except DataUnavailable:
-                raise
-            except Exception as exc:  # network/parse errors -> uniform signal
-                raise DataUnavailable(
-                    f"{self.name}: could not fetch {t} ({exc}). In this "
-                    f"environment only allowlisted hosts are reachable."
-                ) from exc
+            except Exception as exc:  # noqa: BLE001 - skip individual failures
+                skipped.append((t, exc))
+        if not frames:
+            reason = skipped[0][1] if skipped else "no data"
+            raise DataUnavailable(
+                f"{self.name}: could not fetch any of {tickers} (e.g. {reason}). "
+                f"In this environment only allowlisted hosts are reachable."
+            )
         closes = pd.concat({t: f["close"] for t, f in frames.items()}, axis=1).dropna()
         vols = pd.concat({t: f["volume"] for t, f in frames.items()}, axis=1).reindex(closes.index)
         return PanelData(
@@ -117,12 +118,55 @@ class YahooProvider(_LiveProvider):
                             index=ts)
 
 
+_CM_VOLUME_COLS = ("VolTrustedSpotUSD", "VolNtv", "TxTfrValUSD")
+
+
+def parse_coinmetrics_csv(df, volume_cols=_CM_VOLUME_COLS):
+    """Extract (close, volume) Series indexed by date from a Coin Metrics frame.
+
+    Price is PriceUSD; volume is the first available column from
+    `volume_cols` (NaN if none). Rows without a price are dropped.
+    """
+    df = df.copy()
+    df = df.dropna(subset=["PriceUSD"])
+    idx = pd.to_datetime(df["time"])
+    close = pd.Series(df["PriceUSD"].to_numpy(), index=idx, name="close")
+    vcol = next((c for c in volume_cols if c in df.columns), None)
+    if vcol is None:
+        vol = pd.Series(np.nan, index=idx, name="volume")
+    else:
+        vol = pd.Series(df[vcol].to_numpy(), index=idx, name="volume")
+    return close, vol
+
+
+class CoinMetricsProvider(_LiveProvider):
+    """Real live provider: fetches Coin Metrics community CSVs from GitHub raw.
+
+    Works in this environment (GitHub raw is allowlisted) and stays current
+    as the upstream repository updates. Tickers are coin symbols (btc, eth).
+    """
+
+    name = "coinmetrics"
+    BASE = "https://raw.githubusercontent.com/coinmetrics/data/master/csv/{}.csv"
+
+    def _fetch_one(self, ticker):
+        usecols = ["time", "PriceUSD"] + list(_CM_VOLUME_COLS)
+        df = pd.read_csv(
+            self.BASE.format(ticker.lower()),
+            usecols=lambda c: c in usecols,
+        )
+        close, vol = parse_coinmetrics_csv(df)
+        return pd.DataFrame({"close": close, "volume": vol})
+
+
 def get_provider(spec):
-    """Resolve a provider spec: 'csv:PATH', 'stooq', or 'yahoo'."""
+    """Resolve a provider spec: 'csv:PATH', 'stooq', 'yahoo', 'coinmetrics'."""
     if spec.startswith("csv:"):
         return CSVPanelProvider(spec[4:])
     if spec == "stooq":
         return StooqProvider()
     if spec == "yahoo":
         return YahooProvider()
+    if spec == "coinmetrics":
+        return CoinMetricsProvider()
     raise ValueError(f"unknown provider spec: {spec!r}")

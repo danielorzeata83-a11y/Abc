@@ -17,8 +17,8 @@ Nothing here is investment advice.
 
 import argparse
 
-from markov.data_providers import get_provider, DataUnavailable
-from markov.universes import resolve_universe
+from markov.data_providers import get_provider, DataUnavailable, CSVPanelProvider
+from markov.universes import resolve_universe, candidate_tickers
 from markov.engine import SignalEngine
 from markov.dashboard import render_table, render_html
 
@@ -34,9 +34,17 @@ def main():
     args = ap.parse_args()
 
     provider = get_provider(args.provider)
+    is_csv = isinstance(provider, CSVPanelProvider)
     try:
-        panel = provider.fetch(None if args.provider.startswith("csv:")
-                               and args.universe.upper() == "SP500" else None)
+        if is_csv:
+            panel = provider.fetch(None)            # CSV can enumerate all
+        else:
+            cands = candidate_tickers(args.universe)  # live needs explicit list
+            if cands is None:
+                raise SystemExit(f"universe {args.universe!r} can't be "
+                                 f"enumerated on a live provider; pass a "
+                                 f"named universe or ticker list")
+            panel = provider.fetch(cands)
     except DataUnavailable as exc:
         raise SystemExit(str(exc))
 
