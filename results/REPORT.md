@@ -115,3 +115,33 @@ Nici ca filtru defensiv Markov nu adaugă valoare consistentă. Singurele
 elemente robuste rămân: (1) vol targeting pentru control de risc, (2)
 trend-following ca sursă de randament pe active trendante. Markov nu
 intră în niciuna.
+
+---
+
+## Validare out-of-sample a trend-following (testul suprem)
+
+Selectez fereastra MA pe primele 60% din istoric (train), o tranzacționez
+pe ultimele 40% (test, nevăzut). Risc egal, 10 bps.
+
+| Activ | MA ales pe train | Sharpe train | Sharpe TEST | B&H TEST | Câștigător |
+|---|---|---|---|---|---|
+| BTC   | MA10  | 2.32 | 0.64 | 0.95 | Buy&Hold |
+| Brent | MA150 | 0.43 | -0.22 | -0.12 | Buy&Hold |
+
+### Constatare decisivă
+
+Pe BTC, MA10 avea Sharpe 2.32 pe train -> s-a prăbușit la 0.64 OOS și a
+pierdut față de buy&hold (0.95). Overfitting prins în flagrant. Aparenta
+"robustețe pe ferestre" din sweep era o iluzie: când SELECTEZI efectiv un
+parametru pe trecut și-l tranzacționezi forward, avantajul dispare pe
+ambele active.
+
+### Verdict final al întregului proiect
+
+NICIO variantă testată -- Markov standalone, HMM, regim ca filtru,
+trend-following cu parametru selectat -- nu bate buy&hold out-of-sample
+pe aceste active individuale, după costuri și la risc egal. Singura
+tehnică robustă rămâne vol targeting (reduce drawdown fără a promite
+randament). Concluzia practică: pe un singur activ, backtest-urile mint;
+ce arată genial in-sample moare out-of-sample. Aceasta NU este consiliere
+de investiții.
