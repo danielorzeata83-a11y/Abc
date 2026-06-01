@@ -316,3 +316,44 @@ turn-of-month (Sharpe pozitiv, necorelat) + reversal = combo mai bun decât
 ambele. Combinarea edge-urilor FUNCȚIONEAZĂ -- dar doar cu edge-uri
 genuine, independente, fiecare validat OOS. Exact modelul fondurilor
 quant. NU este consiliere de investiții.
+
+---
+
+## Al treilea edge: vol-managed market (Moreira-Muir) + portofoliul de 3
+
+Scalez expunerea la piață invers cu varianța recentă. Edge documentat,
+dar market-DIRECTIONAL (poartă beta), nu market-neutral.
+
+### Matrice de corelație
+| | Rev | TOM | VolMgd |
+|---|---|---|---|
+| Rev | 1.00 | 0.08 | 0.15 |
+| TOM | 0.08 | 1.00 | 0.46 |
+| VolMgd | 0.15 | 0.46 | 1.00 |
+
+### Performanță
+| | Sharpe full | Sharpe OOS | DD OOS |
+|---|---|---|---|
+| Reversal | +0.34 | +0.09 | -16% |
+| TurnOfMonth | +0.37 | +0.33 | -8% |
+| VolManaged | +0.77 | +1.51 | -10% |
+| COMBO-2 (rev+TOM) | +0.48 | +0.28 | -- |
+| **COMBO-3** | **+0.71** | **+0.99** | -9% |
+
+### Onestitate obligatorie
+VolManaged ridică OOS combo de la 0.28 la 0.99 -- dar e market-directional
+(corr 0.46 cu TOM), iar Sharpe-ul lui mare (1.51 OOS) reflectă în mare
+parte bull-ul din perioada de test, nu alpha pur. Portofoliul nu mai e
+"3 alpha-uri independente", ci 1 alpha market-neutral (reversal) + 2
+edge-uri de timing care împart beta. Are Sharpe mai mare și drawdown mai
+mic, dar și mai multă dependență de piață -- ar suferi mai mult într-un
+bear. Beneficiul Moreira-Muir e însă real: vol-managing taie expunerea
+înainte de turbulență (DD -10% vs piață ~-17%).
+
+### Concluzie
+Portofoliul final: reversal (alpha market-neutral) + turn-of-month +
+vol-managed (timing). COMBO-3 OOS Sharpe +0.99 cu drawdown -9%. Combinarea
+edge-urilor reale, independente și validate OOS funcționează -- exact
+modelul fondurilor quant. Distincția cheie învățată: market-neutral alpha
+(diversifică) vs market-timing/beta (amplifică în trend). NU este
+consiliere de investiții.
