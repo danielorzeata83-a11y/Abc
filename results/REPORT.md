@@ -182,3 +182,41 @@ nici trend, nici momentum de portofoliu. Lecția nu e "totul e inutil",
 ci: un edge real cere amploare (decade × multe piețe × multe active) și
 infrastructură pe care un "truc" de pe YouTube nu o are. Baseline-ul
 robust rămâne buy&hold + vol targeting. NU este consiliere de investiții.
+
+---
+
+## EDGE POZITIV GĂSIT: short-term reversal (market-neutral alpha)
+
+Long recent losers / short recent winners pe panel-ul S&P 500 (470
+acțiuni). Turnover redus + costuri instituționale.
+
+### Net Sharpe vs nivel cost (full sample)
+| config | 1bps | 2bps | 3bps | 5bps |
+|---|---|---|---|---|
+| lb=10 h=5 top=0.2 | 0.43 | 0.32 | 0.20 | -0.02 |
+| lb=10 h=10 top=0.2 | 0.40 | 0.32 | 0.24 | 0.07 |
+| lb=15 h=10 top=0.1 | 0.38 | 0.32 | 0.26 | 0.15 |
+| lb=10 h=5 top=0.1 | 0.44 | 0.34 | 0.24 | 0.05 |
+
+### Validare OUT-OF-SAMPLE @ 2bps (train 60% / test 40%)
+Selectat lb=10 h=5 top=0.1 (train Sharpe 0.39) ->
+**TEST Reversal Sharpe +0.20, ret +3%**, corelație cu piața +0.10.
+(Buy&Hold test Sharpe 1.90 -- bull pur, dar reversal e market-neutral.)
+
+### De ce e un edge REAL (spre deosebire de restul proiectului)
+1. Sharpe GROSS pozitiv pe TOATE configurațiile (robust, nu noroc).
+2. SUPRAVIEȚUIEȘTE out-of-sample net de costuri (+0.20, NU se prăbușește
+   în negativ ca Markov/trend/momentum). Prima dată în tot proiectul.
+3. Corelație cu piața +0.10 -> aproape MARKET-NEUTRAL: sursă de alpha
+   independentă de direcția pieței.
+
+### Limite (sinceritate obligatorie)
+- Modest (Sharpe 0.2-0.4), nu îmbogățește peste noapte.
+- Nu bate buy&hold standalone într-un bull (rolul lui e diversificare).
+- Moare la costuri retail (>=5-10bps); viabil doar instituțional (1-3bps).
+
+### Concluzie
+Primul edge pozitiv robust și validat OOS din proiect. Arată exact ca
+alpha quant autentic: mic, market-neutral, sensibil la costuri -- opusul
+unui "truc" de YouTube. Fondurile reale combină multe astfel de edge-uri
+mici la costuri mici. NU este consiliere de investiții.
