@@ -357,3 +357,44 @@ edge-urilor reale, independente și validate OOS funcționează -- exact
 modelul fondurilor quant. Distincția cheie învățată: market-neutral alpha
 (diversifică) vs market-timing/beta (amplifică în trend). NU este
 consiliere de investiții.
+
+---
+
+## Al patrulea edge: short-horizon reversal (Rev3), market-neutral independent
+
+Reversal pe 3 zile -- aceeași familie ca Rev10 dar orizont distinct care
+poartă informație independentă (dovedit prin orthogonalize).
+
+### Matrice corelație (4 edge-uri)
+| | Rev10 | Rev3 | TOM | VolMgd |
+|---|---|---|---|---|
+| Rev10 | 1.00 | 0.38 | 0.08 | 0.15 |
+| Rev3 | 0.38 | 1.00 | 0.02 | 0.05 |
+| TOM | 0.08 | 0.02 | 1.00 | 0.46 |
+| VolMgd | 0.15 | 0.05 | 0.46 | 1.00 |
+
+**Rev3 ortogonal pe Rev10+TOM+VolMgd: reziduu OOS Sharpe +0.32** ->
+alpha genuin independent, nu redundanță.
+
+### Portfolio OOS (inverse-vol weights din train 60%)
+| Portofoliu | Sharpe | ret | DD |
+|---|---|---|---|
+| COMBO-2 (Rev10+TOM) | +0.28 | +5% | -13% |
+| COMBO-3 (+VolMgd) | +0.99 | +21% | -9% |
+| COMBO-4 (+Rev3) | +1.00 | +21% | -8% |
+| **MN-only (Rev10+Rev3)** | +0.27 | +4% | -10% |
+
+### Onestitate
+Rev3 adaugă alpha independent real (reziduu ortogonal +0.32) și îmbună-
+tățește drawdown-ul (-9%->-8%), dar mișcă headline Sharpe doar marginal
+(0.99->1.00) fiindcă beta-ul VolMgd domină magnitudinea în bull. Un alpha
+market-neutral mic adăugat la un combo beta-greu schimbă puțin randamentul
+dar crește robustețea. MN-only (Rev10+Rev3) e portofoliul de alpha PUR:
+Sharpe 0.27, zero dependență de piață.
+
+### Concluzie
+4 edge-uri validate OOS: 2 market-neutral (Rev10, Rev3) + 2 timing
+(TOM, VolMgd). Helper-ul orthogonalize separă riguros alpha independent de
+redundanță. Construcția unui portofoliu multi-edge funcționează când
+fiecare sleeve e un edge real, validat OOS, iar contribuția independentă e
+demonstrată, nu presupusă. NU este consiliere de investiții.
