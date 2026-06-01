@@ -39,3 +39,35 @@ looks good because of the OOS window placement. A credible crypto strategy
 would need regime-aware design and far more history/coins than this sample.
 This is the same discipline applied throughout: a good-looking OOS number
 that collapses under sub-period analysis is rejected. NOT investment advice.
+
+---
+
+## Regime-gated momentum — promising but not robustly validated
+
+Hold the momentum book only when the equal-weight crypto index is above
+its MA (a-priori windows; gate uses past only). CRYPTO_WIDE, lb=21.
+
+| variant | full | OOS | third1 | third2 | third3 | %on |
+|---|---|---|---|---|---|---|
+| momentum (ungated) | -0.11 | 0.80 | -1.05 | +0.03 | +0.79 | 100% |
+| + gate50  | 0.12 | 1.11 | -0.21 | -0.58 | +1.16 | 43% |
+| + gate100 | 0.16 | 1.22 | -0.15 | -0.71 | +1.37 | 42% |
+| + gate200 | 0.63 | 1.68 | +0.31 | -0.61 | +2.02 | 39% |
+
+### Honest read
+The gate removes the third1 (2020-2022 crash) disaster and lifts full/OOS
+Sharpe materially. BUT two red flags:
+1. third2 is NEGATIVE in every gated variant (-0.58..-0.71) -> fails the
+   all-sub-period consistency bar that the equities edges passed.
+2. Performance increases MONOTONICALLY with the MA window (50->100->200).
+   With only one major crash in the sample, "longer window is better" is
+   the signature of fitting to that single 2022 event, not a robust regime
+   edge.
+
+### Verdict
+Regime gating is directionally sound and the most promising crypto result,
+but it is NOT robustly validated here: one regime cycle cannot distinguish
+a real regime edge from a fit to the 2022 crash, and third2 still loses.
+A credible claim needs multiple independent crash/recovery cycles (far more
+history). Refusing to crown gate200 is the same discipline applied to
+PreHoliday/HS-weekday earlier. NOT investment advice.

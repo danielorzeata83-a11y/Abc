@@ -25,7 +25,8 @@ def _centered_ranks(scores):
 
 
 def signal_portfolio_returns(prices, volume=None, rev_lb=10, lookback=126,
-                             skip=21, holding=5, cost=2e-4, rev_sign=-1):
+                             skip=21, holding=5, cost=2e-4, rev_sign=-1,
+                             gate=None):
     """Daily returns of the combined cross-sectional signal portfolio.
 
     rev_sign=-1 (default) is reversal (long recent losers) -- the equities
@@ -57,6 +58,9 @@ def signal_portfolio_returns(prices, volume=None, rev_lb=10, lookback=126,
         sig = sig - sig.mean()                                         # dollar-neutral
         gross = np.abs(sig).sum()
         w = sig / gross if gross > 0 else sig
+        if gate is not None:
+            w = w * float(gate[t])                                     # risk-on/off
+
         turnover = np.abs(w - prev_w).sum()
         charged = False
         for _ in range(holding):
