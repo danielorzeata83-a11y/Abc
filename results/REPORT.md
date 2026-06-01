@@ -145,3 +145,40 @@ tehnică robustă rămâne vol targeting (reduce drawdown fără a promite
 randament). Concluzia practică: pe un singur activ, backtest-urile mint;
 ce arată genial in-sample moare out-of-sample. Aceasta NU este consiliere
 de investiții.
+
+---
+
+## Momentum cross-sectional pe portofoliu (S&P 500, 470 acțiuni, 2013-2018)
+
+Singura direcție validată academic. Rank universe după randament trecut,
+long winners / short losers, rebalansare lunară. No look-ahead.
+
+| Strategie | Ret | Sharpe | MaxDD |
+|---|---|---|---|
+| EqualWeight Buy&Hold | 92% | 1.09 | -17% |
+| LongShort top/bot 20% | 26% | 0.48 | -18% |
+| LongShort top/bot 10% | 47% | 0.61 | -22% |
+| LongOnly top 20% | 96% | 1.14 | -13% |
+
+### Out-of-sample (train 60% / test 40%)
+Selectat lookback=126 skip=5 (train Sharpe 0.88) ->
+TEST Momentum LS Sharpe **-0.17** vs Buy&Hold **1.90**. Buy&hold câștigă.
+
+### Constatare
+
+Nici momentum pe portofoliu nu bate buy&hold în acest eșantion.
+LongOnly top-20% doar egalează (1.14 vs 1.09). Long-short pierde clar.
+ATENȚIE la context: 2013-2018 e un singur bull market puternic --
+mediul cel mai ostil pentru long-short momentum (piciorul short e
+strivit), și exact perioada în care factorul momentum a avut
+underperformance documentat post-criză. Validarea academică reală
+folosește ~90 ani și multe piețe -- ce nu putem replica aici.
+
+### Concluzie onestă
+
+Pe datele pe care le putem testa efectiv, NICIO strategie nu bate
+robust buy&hold după costuri și la risc egal -- nici Markov, nici HMM,
+nici trend, nici momentum de portofoliu. Lecția nu e "totul e inutil",
+ci: un edge real cere amploare (decade × multe piețe × multe active) și
+infrastructură pe care un "truc" de pe YouTube nu o are. Baseline-ul
+robust rămâne buy&hold + vol targeting. NU este consiliere de investiții.
