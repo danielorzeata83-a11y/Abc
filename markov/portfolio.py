@@ -15,6 +15,27 @@ import numpy as np
 _ANN = np.sqrt(252)
 
 
+def orthogonalize(stream, basis):
+    """Residual of `stream` after regressing it on the `basis` streams.
+
+    Returns stream - B @ betas, where betas are the OLS coefficients of
+    `stream` on the basis (with intercept). A positive-Sharpe residual
+    proves the stream carries information independent of the basis, i.e.
+    genuine diversification rather than redundancy.
+    """
+    stream = np.asarray(stream, dtype=float)
+    basis = [np.asarray(b, dtype=float) for b in basis]
+    n = len(stream)
+    if any(len(b) != n for b in basis):
+        raise ValueError("stream and basis must have the same length")
+    X = np.column_stack([np.ones(n)] + basis)  # intercept + basis
+    coef, *_ = np.linalg.lstsq(X, stream, rcond=None)
+    # Keep the intercept's contribution (the stream's own mean alpha):
+    # residual = stream - basis_part, excluding intercept from removal.
+    basis_part = X[:, 1:] @ coef[1:]
+    return stream - basis_part
+
+
 def combine_alphas(streams, target_vol=0.10, weights=None):
     """Equal-risk blend of return streams, scaled to `target_vol` annual.
 
