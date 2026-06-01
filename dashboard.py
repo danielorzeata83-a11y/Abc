@@ -62,6 +62,10 @@ def main():
 
     title = f"{args.universe} signals - {asof}"
     print(title)
+    if not args.provider.startswith("csv:"):
+        print("WARNING: cross-sectional edges are OOS-validated on EQUITIES "
+              "only; on crypto they backtest negative (see "
+              "results/crypto_validation.md). Treat as UNVALIDATED.")
     print(render_table(signals, top_n=args.top))
 
     with open(args.html, "w") as fh:

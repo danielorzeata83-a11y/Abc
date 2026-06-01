@@ -21,6 +21,15 @@ NAMED_UNIVERSES = {
         "btc", "eth", "ltc", "xrp", "bch", "ada", "doge", "sol",
         "etc", "xlm", "link", "uni", "aave", "mkr",
     ],
+    # Wider crypto cross-section (49 Coin Metrics coins) for proper ranking.
+    "CRYPTO_WIDE": [
+        "btc", "eth", "ltc", "xrp", "bch", "ada", "doge", "sol", "etc",
+        "xlm", "link", "uni", "aave", "mkr", "xmr", "eos", "trx", "neo",
+        "dash", "zec", "xtz", "atom", "algo", "vet", "bsv", "miota", "dcr",
+        "bnb", "matic", "avax", "dot", "fil", "theta", "egld", "xem", "hbar",
+        "ksm", "waves", "comp", "yfi", "sushi", "snx", "crv", "bat", "zrx",
+        "omg", "knc", "ren", "lrc",
+    ],
 }
 
 

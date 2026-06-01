@@ -42,3 +42,12 @@ def test_dollar_neutral_weights_small_net_exposure():
     prices, volume = _mean_reverting_panel()
     r = signal_portfolio_returns(prices, volume, holding=5)
     assert abs(np.mean(r)) < 0.05
+
+
+def test_rev_sign_flips_book():
+    # Momentum (rev_sign=+1) should be the opposite book of reversal (-1)
+    # on the reversal leg -> different return stream.
+    prices, volume = _mean_reverting_panel()
+    rev = signal_portfolio_returns(prices, None, holding=5, rev_sign=-1)
+    mom = signal_portfolio_returns(prices, None, holding=5, rev_sign=+1)
+    assert not np.allclose(rev, mom)

@@ -25,8 +25,13 @@ def _centered_ranks(scores):
 
 
 def signal_portfolio_returns(prices, volume=None, rev_lb=10, lookback=126,
-                             skip=21, holding=5, cost=2e-4):
-    """Daily returns of the combined cross-sectional signal portfolio."""
+                             skip=21, holding=5, cost=2e-4, rev_sign=-1):
+    """Daily returns of the combined cross-sectional signal portfolio.
+
+    rev_sign=-1 (default) is reversal (long recent losers) -- the equities
+    edge; rev_sign=+1 is momentum (long recent winners) -- the crypto
+    stylized fact. The residual-momentum leg is always long winners.
+    """
     prices = np.asarray(prices, dtype=float)
     if volume is not None:
         volume = np.asarray(volume, dtype=float)
@@ -39,7 +44,8 @@ def signal_portfolio_returns(prices, volume=None, rev_lb=10, lookback=126,
     prev_w = np.zeros(N)
     t = start
     while t < T - 1:
-        rev = -_centered_ranks(prices[t] / prices[t - rev_lb] - 1.0)   # long losers
+        # rev_sign=-1: long losers (reversal); +1: long winners (momentum)
+        rev = rev_sign * _centered_ranks(prices[t] / prices[t - rev_lb] - 1.0)
         rm = _centered_ranks(residual_momentum_scores(prices, t, lookback, skip))
         parts = [rev, rm]
         if volume is not None:
