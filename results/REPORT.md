@@ -82,3 +82,36 @@ standard de risk management, complet independentă de metoda din video.
 > egal, este dominată de cea mai simplă alternativă: buy & hold.
 > Recomandare: a NU se folosi în trading real fără un edge fundamental
 > nou. Nimic din acest raport nu constituie sfat de investiții.
+
+---
+
+## Combinații: regim ca filtru defensiv (pasul "păstrăm ce e bun")
+
+Markov regime folosit corect (gate de risc peste o strategie de bază),
+nu ca semnal de intrare. Risc egal 20% vol, 10 bps.
+
+| Activ | Buy&Hold | BH+RegimeFilter | Trend(MA50) | Trend+Regime |
+|---|---|---|---|---|
+| BTC   | 19.424% / 1.57 / −39% | 22.715% / 1.54 / −41% | 126.378% / 1.57 / −62% | 120.788% / 1.56 / −63% |
+| WTI   | 142% / 0.21 / −65% | **−52%** / 0.02 / −76% | −31% / 0.08 / −79% | −27% / 0.09 / −79% |
+| Brent | 65% / 0.16 / −76% | **137%** / 0.21 / −58% | −12% / 0.11 / −80% | −48% / 0.08 / −80% |
+
+(format: randament / Sharpe / MaxDD)
+
+### Constatare
+
+Filtrul de regim NU este robust: ajută pe Brent (137% vs 65%, DD
+−58% vs −76%), strică grav pe WTI (−52% vs 142%), neutru pe BTC. Două
+active aproape identice (WTI/Brent) dau rezultate OPUSE cu aceeași
+metodă -- semnătura norocului, nu a unui edge real.
+
+Trend-following (MA50) este de departe cel mai puternic semnal pe BTC
+(126.378% la Sharpe 1.57), dar pierde pe petrol și nu beneficiază de
+filtrul de regim.
+
+### Verdict combinat
+
+Nici ca filtru defensiv Markov nu adaugă valoare consistentă. Singurele
+elemente robuste rămân: (1) vol targeting pentru control de risc, (2)
+trend-following ca sursă de randament pe active trendante. Markov nu
+intră în niciuna.
