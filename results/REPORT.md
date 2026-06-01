@@ -249,3 +249,34 @@ Versiunea SIMPLĂ rămâne edge-ul robust (plain reversal, OOS +0.20).
 Complexitatea "deșteaptă" a degradat rezultatul -- capcana clasică
 combătută de karpathy-guidelines. În trading: simplu + validat OOS bate
 sofisticat + impresionant in-sample. NU este consiliere de investiții.
+
+---
+
+## Combinarea edge-urilor: nu poți dilua un perdant în câștigător
+
+Am adăugat un al doilea factor market-neutral (low-vol long-short) și am
+încercat să-l combin cu reversal la risc egal.
+
+| | Sharpe | ret | DD |
+|---|---|---|---|
+| Reversal | +0.28 | +14% | -16% |
+| LowVol L/S | -0.62 | -33% | -35% |
+| COMBO 50/50 | -0.28 | -14% | -21% |
+| **OOS** Reversal | -0.02 | | |
+| **OOS** LowVol | -0.86 | | |
+| **OOS** COMBO | -0.64 | | |
+
+Correlație reversal<->lowvol: -0.22 (necorelate, ideal pentru diversificare).
+
+### De ce a eșuat
+LowVol long-short pierde în bull-ul 2013-2018: piciorul short (high-vol/
+high-beta) a condus rally-ul, deci shortarea lui a fost dezastruoasă.
+
+### Lecție de portfolio construction
+Corelația negativă e necesară dar NU suficientă. Diversificarea de risc
+nu repară randament negativ. Combinând un câștigător (+0.28) cu un
+perdant (-0.62) la risc egal, am tras câștigătorul în jos. Nu poți
+fabrica alpha prin combinare: "prânzul gratis" e gratis doar dacă FIECARE
+componentă are deja edge pozitiv. Reversal rămâne singurul edge validat;
+adăugarea unui sleeve negativ doar diluează. NU este consiliere de
+investiții.
