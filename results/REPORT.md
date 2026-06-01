@@ -220,3 +220,32 @@ Primul edge pozitiv robust și validat OOS din proiect. Arată exact ca
 alpha quant autentic: mic, market-neutral, sensibil la costuri -- opusul
 unui "truc" de YouTube. Fondurile reale combină multe astfel de edge-uri
 mici la costuri mici. NU este consiliere de investiții.
+
+---
+
+## Tentativă de întărire a edge-ului: complexitatea a stricat
+
+Am încercat două rafinamente peste plain reversal: (1) ensemble
+multi-orizont (3/5/10 zile), (2) ponderare inverse-volatility a legurilor.
+
+### Net Sharpe pe nivel de cost (full sample)
+| variant | 1bps | 2bps | 3bps | 5bps |
+|---|---|---|---|---|
+| Plain lb=10 h=5 top=0.1 | 0.44 | 0.34 | 0.24 | 0.05 |
+| Ensemble(3,5,10) EW | 0.29 | 0.16 | 0.03 | -0.23 |
+| Ensemble(3,5,10) inverse-vol | 0.00 | -0.15 | -0.29 | -0.58 |
+
+OOS @ 2bps: ensemble selectat -> TEST Sharpe **-0.25** (colaps), vs
+plain reversal care dăduse +0.20 OOS.
+
+### De ce au stricat rafinamentele
+- Inverse-vol a ucis edge-ul: în reversal premiul e TOCMAI în numele cele
+  mai volatile (ricoșează cel mai tare) -- exact cele subponderate.
+- Ensemble-ul a adăugat complexitate fără semnal nou -> overfit la
+  selecție, colaps OOS.
+
+### Lecție
+Versiunea SIMPLĂ rămâne edge-ul robust (plain reversal, OOS +0.20).
+Complexitatea "deșteaptă" a degradat rezultatul -- capcana clasică
+combătută de karpathy-guidelines. În trading: simplu + validat OOS bate
+sofisticat + impresionant in-sample. NU este consiliere de investiții.
