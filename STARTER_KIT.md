@@ -43,6 +43,7 @@ and `tests/` as-is; they are dependency-closed and pure-Python + numpy/pandas.
 |---|---|
 | `valuation.py` | CAPE label / percentile / implied 10y return (index-level, validated) |
 | `fundamentals.py` | per-stock valuation context vs sector & market |
+| `fundamentals_provider.py` | pluggable fundamentals: CSV (now) / FMP live (new repo, needs key) |
 | `screener.py` | value+quality scoring & quadrant (separates value from value traps) |
 
 Entrypoints: `valuation_dashboard.py` (CAPE thermometer), `stock_valuation.py`
