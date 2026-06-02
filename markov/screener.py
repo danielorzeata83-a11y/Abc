@@ -10,6 +10,8 @@ Context for judgement, not a validated buy signal. Per-stock valuation
 lacks the index-level CAPE->return evidence. Not investment advice.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -48,15 +50,50 @@ def _sector_better_pct(df, col):
     return df.groupby("Sector")[col].transform(f)
 
 
-def compute_scores(df):
-    """Add Sales, EBITDA Margin, value_pct, quality_pct and quadrant."""
-    df = df.copy()
+def _cheaper(value, peers):
+    peers = peers[(peers > 0) & np.isfinite(peers)]
+    if not (value > 0 and np.isfinite(value)) or len(peers) == 0:
+        return np.nan
+    return (peers > value).mean() * 100
+
+
+def _better(value, peers):
+    peers = peers[np.isfinite(peers)]
+    if not np.isfinite(value) or len(peers) == 0:
+        return np.nan
+    return (peers < value).mean() * 100
+
+
+def _ranked(df, col, fn, min_peers):
+    """Percentile of each row vs its sector; fall back to the whole market
+    when the sector has fewer than `min_peers` members (small/mixed lists)."""
+    market = df[col].to_numpy(dtype=float)
+    sizes = df.groupby("Sector")[col].transform("count")
+    out = np.full(len(df), np.nan)
+    for pos, (_, row) in enumerate(df.iterrows()):
+        if sizes.iloc[pos] >= min_peers:
+            peers = df.loc[df["Sector"] == row["Sector"], col].to_numpy(dtype=float)
+        else:
+            peers = market  # too few sector peers -> compare to the market
+        out[pos] = fn(float(row[col]), peers)
+    return out
+
+
+def compute_scores(df, min_peers=4):
+    """Add Sales, EBITDA Margin, value_pct, quality_pct and quadrant.
+
+    Percentiles use sector peers when a sector has >= min_peers members,
+    else the whole market (so small or mixed ticker lists stay meaningful).
+    """
+    df = df.copy().reset_index(drop=True)
     df["Sales"] = df["Market Cap"] / df["Price/Sales"].replace(0, np.nan)
     df["EBITDA Margin"] = df["EBITDA"] / df["Sales"]
 
-    vpcts = [_sector_cheaper_pct(df, c) for c in VALUE_RATIOS]
-    df["value_pct"] = pd.concat(vpcts, axis=1).mean(axis=1)
-    df["quality_pct"] = _sector_better_pct(df, "EBITDA Margin")
+    vpcts = [_ranked(df, c, _cheaper, min_peers) for c in VALUE_RATIOS]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        df["value_pct"] = np.nanmean(np.vstack(vpcts), axis=0)
+    df["quality_pct"] = _ranked(df, "EBITDA Margin", _better, min_peers)
 
     def quadrant(row):
         v, q = row["value_pct"], row["quality_pct"]
