@@ -72,16 +72,23 @@ class FMPProvider:
 
     def fetch(self, tickers):
         if not tickers:
-            raise ValueError("FMP provider requires an explicit ticker list")
-        rows = []
+            raise ValueError(
+                "FMP provider needs an explicit ticker list. Use the CSV "
+                "snapshot for a full screen (no --provider), or pass "
+                "--tickers AAPL,MSFT,... (keep it small on the free tier)."
+            )
+        rows, skipped = [], []
         for t in tickers:
             try:
                 rows.append(self._fetch_one(t))
-            except Exception as exc:  # noqa: BLE001
-                raise DataUnavailable(
-                    f"FMP: could not fetch {t} ({exc}). Needs an API key and "
-                    f"outbound network (host not allowlisted in this sandbox)."
-                ) from exc
+            except Exception as exc:  # noqa: BLE001 - skip individual failures
+                skipped.append((t, exc))
+        if not rows:
+            reason = skipped[0][1] if skipped else "no data"
+            raise DataUnavailable(
+                f"FMP: could not fetch any of {tickers} (e.g. {reason}). "
+                f"Check the API key / network / rate limit."
+            )
         return pd.DataFrame(rows)
 
 

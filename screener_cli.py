@@ -69,6 +69,18 @@ def main():
     ap.add_argument("--out", default="results/screener.html")
     args = ap.parse_args()
     tickers = args.tickers.split(",") if args.tickers else None
+    if tickers is None and not args.provider.startswith("csv:"):
+        # Live providers can't enumerate the market; default to the bundled
+        # S&P symbol list and warn about free-tier rate limits.
+        try:
+            syms = pd.read_csv("data/sp500_financials.csv")["Symbol"].tolist()
+        except Exception:
+            raise SystemExit("Live provider needs --tickers AAPL,MSFT,... "
+                             "(no bundled symbol list found).")
+        print(f"Live provider: screening {len(syms)} S&P names. WARNING: free "
+              f"API tiers rate-limit (~250/day, 3 calls/stock) -- pass "
+              f"--tickers A,B,C for a small list, or use the CSV snapshot.")
+        tickers = syms
     try:
         raw = get_fundamentals_provider(args.provider).fetch(tickers)
     except DataUnavailable as exc:
