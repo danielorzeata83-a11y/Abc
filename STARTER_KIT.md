@@ -37,6 +37,20 @@ and `tests/` as-is; they are dependency-closed and pure-Python + numpy/pandas.
 | `lln.py` | law of large numbers (edge × independent repetition) |
 | `dca.py` | dollar-cost-averaging buy & hold simulator |
 
+## Value investing toolkit (the one validated direction)
+
+| Module | Purpose |
+|---|---|
+| `valuation.py` | CAPE label / percentile / implied 10y return (index-level, validated) |
+| `fundamentals.py` | per-stock valuation context vs sector & market |
+| `screener.py` | value+quality scoring & quadrant (separates value from value traps) |
+
+Entrypoints: `valuation_dashboard.py` (CAPE thermometer), `stock_valuation.py`
+(per-ticker card), `screener_cli.py` (CHEAP+QUALITY screen). Evidence:
+`results/value_investing.md` (CAPE->return validated; CAPE timing fails;
+per-stock value is context not a signal -> combine with quality).
+Needs a fundamentals data source for live use (snapshot bundled here).
+
 ## Signal + UI framework
 
 | Module | Purpose |
