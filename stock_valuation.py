@@ -70,14 +70,31 @@ nu serie temporal&#259;. NU este consiliere de investi&#539;ii.</div>
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", required=True)
-    ap.add_argument("--provider", default="csv:data/sp500_financials.csv",
-                    help="csv:PATH or fmp:API_KEY")
+    ap.add_argument("--universe", default="data/sp500_financials.csv",
+                    help="peer-universe snapshot CSV (for sector/market percentiles)")
+    ap.add_argument("--provider", default=None,
+                    help="optional live refresh of the target, e.g. fmp:API_KEY")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
-    from markov.fundamentals_provider import get_fundamentals_provider
-    df = get_fundamentals_provider(args.provider).fetch()
-    ctx = valuation_context(df, args.ticker.upper())
-    out = args.out or f"results/{args.ticker.upper()}_valuation.html"
+    ticker = args.ticker.upper()
+
+    # Peer universe (needed for sector/market percentiles) from the snapshot.
+    df = pd.read_csv(args.universe)
+
+    # Optional: refresh just the target ticker with live data.
+    if args.provider:
+        from markov.fundamentals_provider import get_fundamentals_provider
+        from markov.data_providers import DataUnavailable
+        try:
+            live = get_fundamentals_provider(args.provider).fetch([ticker])
+            df = pd.concat([df[df["Symbol"] != ticker], live],
+                           ignore_index=True)
+            print(f"(refreshed {ticker} live via {args.provider.split(':')[0]})")
+        except (DataUnavailable, Exception) as exc:
+            print(f"(live refresh failed: {exc}; using snapshot)")
+
+    ctx = valuation_context(df, ticker)
+    out = args.out or f"results/{ticker}_valuation.html"
     with open(out, "w") as fh:
         fh.write(render(df, ctx))
     print(f"{ctx['ticker']}: {ctx['label']} | P/E {ctx['pe']:.1f} | "
