@@ -70,10 +70,12 @@ nu serie temporal&#259;. NU este consiliere de investi&#539;ii.</div>
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", required=True)
-    ap.add_argument("--data", default="data/sp500_financials.csv")
+    ap.add_argument("--provider", default="csv:data/sp500_financials.csv",
+                    help="csv:PATH or fmp:API_KEY")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
-    df = pd.read_csv(args.data)
+    from markov.fundamentals_provider import get_fundamentals_provider
+    df = get_fundamentals_provider(args.provider).fetch()
     ctx = valuation_context(df, args.ticker.upper())
     out = args.out or f"results/{args.ticker.upper()}_valuation.html"
     with open(out, "w") as fh:

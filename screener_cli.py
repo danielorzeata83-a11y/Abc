@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 
 from markov.screener import compute_scores, QUADRANTS
+from markov.fundamentals_provider import get_fundamentals_provider
+from markov.data_providers import DataUnavailable
 
 COLOUR = {
     "CHEAP + QUALITY": "#1a7f37",
@@ -60,11 +62,18 @@ Snapshot data. NOT investment advice.</div></body></html>"""
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="data/sp500_financials.csv")
+    ap.add_argument("--provider", default="csv:data/sp500_financials.csv",
+                    help="csv:PATH or fmp:API_KEY")
+    ap.add_argument("--tickers", default=None, help="comma list (live providers)")
     ap.add_argument("--quadrant", default=None, choices=list(QUADRANTS) + [None])
     ap.add_argument("--out", default="results/screener.html")
     args = ap.parse_args()
-    df = compute_scores(pd.read_csv(args.data))
+    tickers = args.tickers.split(",") if args.tickers else None
+    try:
+        raw = get_fundamentals_provider(args.provider).fetch(tickers)
+    except DataUnavailable as exc:
+        raise SystemExit(str(exc))
+    df = compute_scores(raw)
     with open(args.out, "w") as fh:
         fh.write(render(df, args.quadrant))
     cq = df[df["quadrant"] == "CHEAP + QUALITY"].sort_values("value_pct", ascending=False)
