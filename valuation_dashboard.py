@@ -10,6 +10,9 @@ A 10-year signal, not a market-timing tool. Not investment advice.
 """
 
 import argparse
+import os as _os
+def _DATA(name):
+    return _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data", name)
 
 import numpy as np
 import pandas as pd
@@ -21,7 +24,7 @@ H = 120  # 10-year forward window (months)
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="data/sp500_monthly.csv")
+    ap.add_argument("--data", default=_DATA("sp500_monthly.csv"))
     ap.add_argument("--out", default="results/valuation_thermometer.html")
     args = ap.parse_args()
 
@@ -85,6 +88,8 @@ a&#537;tept&#259;rile &#537;i s&#259; cumperi mai agresiv c&acirc;nd pia&#539;a 
 Sursa live: multpl.com/shiller-pe. NU este consiliere de investi&#539;ii.</div>
 </body></html>"""
 
+    import os as __os
+    __os.makedirs(__os.path.dirname(__os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         fh.write(html)
     print(f"CAPE {cur:.1f} ({label}) | percentila {pct:.0f}% | "

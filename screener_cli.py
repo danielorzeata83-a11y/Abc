@@ -11,6 +11,9 @@ Context for judgement, not a validated buy signal. Not investment advice.
 """
 
 import argparse
+import os as _os
+def _DATA(name):
+    return _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data", name)
 
 import numpy as np
 import pandas as pd
@@ -62,7 +65,7 @@ Snapshot data. NOT investment advice.</div></body></html>"""
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", default="csv:data/sp500_financials.csv",
+    ap.add_argument("--provider", default="csv:"+_DATA("sp500_financials.csv"),
                     help="csv:PATH or fmp:API_KEY")
     ap.add_argument("--tickers", default=None, help="comma list (live providers)")
     ap.add_argument("--quadrant", default=None, choices=list(QUADRANTS) + [None])
@@ -73,7 +76,7 @@ def main():
         # Live providers can't enumerate the market; default to the bundled
         # S&P symbol list and warn about free-tier rate limits.
         try:
-            syms = pd.read_csv("data/sp500_financials.csv")["Symbol"].tolist()
+            syms = pd.read_csv(_DATA("sp500_financials.csv"))["Symbol"].tolist()
         except Exception:
             raise SystemExit("Live provider needs --tickers AAPL,MSFT,... "
                              "(no bundled symbol list found).")
@@ -86,6 +89,8 @@ def main():
     except DataUnavailable as exc:
         raise SystemExit(str(exc))
     df = compute_scores(raw)
+    import os as __os
+    __os.makedirs(__os.path.dirname(__os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         fh.write(render(df, args.quadrant))
     cq = df[df["quadrant"] == "CHEAP + QUALITY"].sort_values("value_pct", ascending=False)

@@ -16,6 +16,9 @@ Nothing here is investment advice.
 """
 
 import argparse
+import os as _os
+def _DATA(name):
+    return _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data", name)
 
 from markov.data_providers import get_provider, DataUnavailable, CSVPanelProvider
 from markov.universes import resolve_universe, candidate_tickers
@@ -25,7 +28,7 @@ from markov.dashboard import render_table, render_html
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", default="csv:data/sp500.csv")
+    ap.add_argument("--provider", default="csv:"+_DATA("sp500.csv"))
     ap.add_argument("--universe", default="TECH")
     ap.add_argument("--top", type=int, default=None,
                     help="show only the strongest N buys and N sells")
@@ -68,6 +71,8 @@ def main():
               "results/crypto_validation.md). Treat as UNVALIDATED.")
     print(render_table(signals, top_n=args.top))
 
+    import os as __os
+    __os.makedirs(__os.path.dirname(__os.path.abspath(args.html)), exist_ok=True)
     with open(args.html, "w") as fh:
         fh.write(render_html(signals, title=title, top_n=args.top))
     print(f"\nHTML dashboard written to {args.html}")

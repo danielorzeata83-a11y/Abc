@@ -13,6 +13,9 @@ signals, NOT a validated strategy. Nothing here is investment advice.
 """
 
 import argparse
+import os as _os
+def _DATA(name):
+    return _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data", name)
 
 import numpy as np
 import pandas as pd
@@ -107,7 +110,7 @@ the continuous cross-sectional signals &mdash; NOT a validated strategy
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", required=True)
-    ap.add_argument("--data", default="data/sp500.csv")
+    ap.add_argument("--data", default=_DATA("sp500.csv"))
     ap.add_argument("--sl", type=float, default=0.05)
     ap.add_argument("--tp", type=float, default=0.10)
     ap.add_argument("--max-hold", type=int, default=20)
@@ -121,6 +124,8 @@ def main():
                              sig, threshold=args.threshold, sl_pct=args.sl,
                              tp_pct=args.tp, max_hold=args.max_hold)
     out = args.out or f"results/{args.ticker}_chart.html"
+    import os as __os
+    __os.makedirs(__os.path.dirname(__os.path.abspath(out)), exist_ok=True)
     with open(out, "w") as fh:
         fh.write(render_html(args.ticker, dates, close[:, idx], trades,
                              args.sl, args.tp))

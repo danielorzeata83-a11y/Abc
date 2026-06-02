@@ -11,6 +11,9 @@ Not investment advice.
 """
 
 import argparse
+import os as _os
+def _DATA(name):
+    return _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data", name)
 
 import numpy as np
 import pandas as pd
@@ -70,7 +73,7 @@ nu serie temporal&#259;. NU este consiliere de investi&#539;ii.</div>
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", required=True)
-    ap.add_argument("--universe", default="data/sp500_financials.csv",
+    ap.add_argument("--universe", default=_DATA("sp500_financials.csv"),
                     help="peer-universe snapshot CSV (for sector/market percentiles)")
     ap.add_argument("--provider", default=None,
                     help="optional live refresh of the target, e.g. fmp:API_KEY")
@@ -95,6 +98,8 @@ def main():
 
     ctx = valuation_context(df, ticker)
     out = args.out or f"results/{ticker}_valuation.html"
+    import os as __os
+    __os.makedirs(__os.path.dirname(__os.path.abspath(out)), exist_ok=True)
     with open(out, "w") as fh:
         fh.write(render(df, ctx))
     print(f"{ctx['ticker']}: {ctx['label']} | P/E {ctx['pe']:.1f} | "
