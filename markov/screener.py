@@ -79,6 +79,21 @@ def _ranked(df, col, fn, min_peers):
     return out
 
 
+def _ranked_quality(df, min_peers):
+    """Quality percentile, comparing each row only to peers using the SAME
+    metric (EBITDA margin vs EBITDA margin, ROE vs ROE) so financials (ROE)
+    and the rest (EBITDA margin) are scored apples-to-apples."""
+    out = np.full(len(df), np.nan)
+    for pos in range(len(df)):
+        metric = df["q_metric"].iloc[pos]
+        val = float(df["q_value"].iloc[pos])
+        same = df[df["q_metric"] == metric]
+        sector = same[same["Sector"] == df["Sector"].iloc[pos]]
+        peers = (sector if len(sector) >= min_peers else same)["q_value"].to_numpy(float)
+        out[pos] = _better(val, peers)
+    return out
+
+
 def compute_scores(df, min_peers=4):
     """Add Sales, EBITDA Margin, value_pct, quality_pct and quadrant.
 
@@ -88,12 +103,17 @@ def compute_scores(df, min_peers=4):
     df = df.copy().reset_index(drop=True)
     df["Sales"] = df["Market Cap"] / df["Price/Sales"].replace(0, np.nan)
     df["EBITDA Margin"] = df["EBITDA"] / df["Sales"]
+    # ROE = earnings/book = (P/B)/(P/E); quality metric for banks etc. with no EBITDA.
+    df["ROE"] = df["Price/Book"] / df["Price/Earnings"].replace(0, np.nan)
+    use_ebitda = np.isfinite(df["EBITDA Margin"])
+    df["q_metric"] = np.where(use_ebitda, "ebitda", "roe")
+    df["q_value"] = np.where(use_ebitda, df["EBITDA Margin"], df["ROE"])
 
     vpcts = [_ranked(df, c, _cheaper, min_peers) for c in VALUE_RATIOS]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         df["value_pct"] = np.nanmean(np.vstack(vpcts), axis=0)
-    df["quality_pct"] = _ranked(df, "EBITDA Margin", _better, min_peers)
+    df["quality_pct"] = _ranked_quality(df, min_peers)
 
     def quadrant(row):
         v, q = row["value_pct"], row["quality_pct"]
