@@ -36,3 +36,35 @@ Caveats (honesty):
 This image aligns with the only thing that beat everything else in the
 project: diversified, low-cost, long-horizon buy & hold with behavioural
 discipline. NOT investment advice.
+
+---
+
+## Can CAPE be used as a trading signal ("green=buy, red=cash")? No.
+
+In/out market timing by CAPE vs buy & hold (S&P 500 monthly 1881-2023, price):
+
+| strategy | x money | CAGR | MaxDD | Sharpe | % invested |
+|---|---|---|---|---|---|
+| Buy & Hold | 730x | 4.7% | -85% | 0.40 | 100% |
+| CAPE<15 in/out | 35x | 2.5% | -60% | 0.29 | 40% |
+| CAPE<20 in/out | 71x | 3.0% | -73% | 0.30 | 70% |
+| CAPE<25 in/out | 268x | 4.0% | -80% | 0.36 | 86% |
+| CAPE-scaled (0-100%) | 340x | 4.2% | -80% | 0.38 | 88% |
+
+Every timing variant UNDERPERFORMS buy & hold on return AND Sharpe (and
+cash misses dividends, so real-world timing is even worse).
+
+### Why a PREDICTIVE signal still fails as a TRADING signal
+CAPE predicts 10y returns (corr -0.34) but "expensive" means lower-but-still
+-POSITIVE expected return, not negative. Going to cash forfeits that positive
+return; the market's positive drift is very hard to beat by switching in/out.
+For timing to pay, the signal would need to predict NEGATIVE returns -- it
+doesn't. The market also stayed "expensive" for decades post-1990, so a fixed
+threshold sits out huge gains.
+
+### The correct use: a gentle TILT, not an on/off switch
+Stay invested always, but allocate more when cheap and less when expensive
+(the CAPE-scaled variant ~matches buy&hold risk-adjusted with lower average
+exposure). That is exactly what monthly DCA does automatically. Tilt = fine;
+in/out timing = worse. The deepest lesson: even a genuinely predictive signal
+does not make a good market-timing trade. NOT investment advice.
