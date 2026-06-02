@@ -90,7 +90,7 @@ Sursa live: multpl.com/shiller-pe. NU este consiliere de investi&#539;ii.</div>
 
     import os as __os
     __os.makedirs(__os.path.dirname(__os.path.abspath(args.out)), exist_ok=True)
-    with open(args.out, "w") as fh:
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(html)
     print(f"CAPE {cur:.1f} ({label}) | percentila {pct:.0f}% | "
           f"randament implicat 10y {implied*100:+.1f}%/an")

@@ -100,7 +100,7 @@ def main():
     out = args.out or f"results/{ticker}_valuation.html"
     import os as __os
     __os.makedirs(__os.path.dirname(__os.path.abspath(out)), exist_ok=True)
-    with open(out, "w") as fh:
+    with open(out, "w", encoding="utf-8") as fh:
         fh.write(render(df, ctx))
     print(f"{ctx['ticker']}: {ctx['label']} | P/E {ctx['pe']:.1f} | "
           f"cheaper than {ctx['sector_cheaper_pct']:.0f}% of {ctx['sector']}")

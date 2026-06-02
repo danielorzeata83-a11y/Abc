@@ -91,7 +91,7 @@ def main():
     df = compute_scores(raw)
     import os as __os
     __os.makedirs(__os.path.dirname(__os.path.abspath(args.out)), exist_ok=True)
-    with open(args.out, "w") as fh:
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(render(df, args.quadrant))
     cq = df[df["quadrant"] == "CHEAP + QUALITY"].sort_values("value_pct", ascending=False)
     print(f"{len(df)} stocks scored | CHEAP + QUALITY: {len(cq)}")

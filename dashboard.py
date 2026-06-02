@@ -73,7 +73,7 @@ def main():
 
     import os as __os
     __os.makedirs(__os.path.dirname(__os.path.abspath(args.html)), exist_ok=True)
-    with open(args.html, "w") as fh:
+    with open(args.html, "w", encoding="utf-8") as fh:
         fh.write(render_html(signals, title=title, top_n=args.top))
     print(f"\nHTML dashboard written to {args.html}")
 

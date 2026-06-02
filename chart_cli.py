@@ -126,7 +126,7 @@ def main():
     out = args.out or f"results/{args.ticker}_chart.html"
     import os as __os
     __os.makedirs(__os.path.dirname(__os.path.abspath(out)), exist_ok=True)
-    with open(out, "w") as fh:
+    with open(out, "w", encoding="utf-8") as fh:
         fh.write(render_html(args.ticker, dates, close[:, idx], trades,
                              args.sl, args.tp))
     print(summarise(trades))
