@@ -44,3 +44,20 @@ def max_drawdown(values):
     values = np.asarray(values, dtype=float)
     peak = np.maximum.accumulate(values)
     return float(((values - peak) / peak).min())
+
+
+def project_dca(monthly, years, annual_return):
+    """Project a monthly DCA plan forward at a constant annual return.
+
+    Contributions are made at the end of each month and compounded at the
+    monthly equivalent of `annual_return`. Returns invested, final value and
+    profit. A projection, not a promise -- real returns vary widely.
+    """
+    n = int(round(years * 12))
+    i = (1 + annual_return) ** (1 / 12) - 1
+    value = 0.0
+    for _ in range(n):
+        value = value * (1 + i) + monthly
+    invested = monthly * n
+    return {"invested": invested, "final_value": value,
+            "profit": value - invested, "months": n}

@@ -36,3 +36,17 @@ def test_cagr_basic():
 def test_max_drawdown_detects_crash():
     vals = np.array([100, 120, 60, 90, 130.0])
     assert max_drawdown(vals) == pytest.approx(-0.5, abs=1e-9)
+
+
+def test_project_dca_grows_with_return():
+    from markov.dca import project_dca
+    lo = project_dca(monthly=100, years=10, annual_return=0.02)
+    hi = project_dca(monthly=100, years=10, annual_return=0.08)
+    assert hi["final_value"] > lo["final_value"]
+    assert lo["invested"] == 100 * 12 * 10
+
+
+def test_project_dca_zero_return_equals_invested():
+    from markov.dca import project_dca
+    r = project_dca(monthly=50, years=5, annual_return=0.0)
+    assert r["final_value"] == pytest.approx(r["invested"])
