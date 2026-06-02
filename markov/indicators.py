@@ -59,3 +59,14 @@ def stochastic_k(prices, period=14):
         lo, hi = window.min(), window.max()
         out[i] = 100.0 * (prices[i] - lo) / (hi - lo) if hi > lo else 50.0
     return out
+
+
+def ema_crossover(prices, fast=9, slow=20):
+    """State signal: +1 when fast EMA is above slow EMA, -1 below.
+
+    The "9/20 EMA crossover" of the intraday infographic, mechanised so it
+    can be tested. Returns a per-bar state using only past prices.
+    """
+    prices = np.asarray(prices, dtype=float)
+    diff = _ema(prices, fast) - _ema(prices, slow)
+    return np.sign(diff)

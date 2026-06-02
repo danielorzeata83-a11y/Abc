@@ -43,3 +43,19 @@ def test_stochastic_range():
     k = stochastic_k(prices, period=14)
     valid = k[~np.isnan(k)]
     assert valid.min() >= 0 and valid.max() <= 100
+
+
+def test_ema_crossover_signs():
+    from markov.indicators import ema_crossover
+    up = np.arange(1, 80, dtype=float)
+    sig = ema_crossover(up, fast=9, slow=20)
+    # in a steady uptrend, fast EMA stays above slow -> last state long
+    assert sig[-1] == 1
+    down = np.arange(80, 1, -1, dtype=float)
+    assert ema_crossover(down, 9, 20)[-1] == -1
+
+
+def test_ema_crossover_length():
+    from markov.indicators import ema_crossover
+    p = 100 + np.cumsum(np.random.default_rng(3).normal(0, 1, 120))
+    assert len(ema_crossover(p, 9, 20)) == len(p)

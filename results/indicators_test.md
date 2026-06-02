@@ -30,3 +30,21 @@ signals) are not shown.
 Caveat: 5-day horizon, simple thresholds; other parameters vary the exact
 numbers but the broad result (near or below coin-flip) matches the whole
 project and the academic literature. NOT investment advice.
+
+## MA crossover (9/20 EMA) — the one testable "intraday strategy"
+Hit rate at predicting the next move sign (8 assets, daily):
+| horizon | hit rate | signals |
+|---|---|---|
+| 1d | 51.1% | 35461 |
+| 5d | 51.3% | 35699 |
+| 10d | 51.5% | 35700 |
+| 20d | 50.8% | 35639 |
+
+~51% everywhere -- a coin flip, like every other single-asset price signal.
+The other four "intraday strategies" (ORB, VWAP pullback, Gap&Go, breakout)
+need minute data to test (not available here); they are the same lagging
+breakout/indicator logic, and intraday = high frequency = high cost, the
+killer for retail. The infographic's own "MOST IMPORTANT PART: risk
+management" is the honest core: a ~51% entry can survive only via strict
+1:2+ RR and loss-cutting -- that is risk/reward asymmetry and discipline,
+not prediction or "high probability". NOT investment advice.
