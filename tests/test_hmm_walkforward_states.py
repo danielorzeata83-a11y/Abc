@@ -1,6 +1,7 @@
 """Walk-forward HMM per-day regime labels (no look-ahead)."""
 
 import numpy as np
+import pytest
 
 from markov.states import State
 from markov.hmm_walkforward import hmm_walk_forward_states
@@ -25,3 +26,9 @@ def test_states_length_and_no_lookahead():
     assert all(isinstance(s, State) for s in states)
     # every refit only ever saw past returns (strictly < total returns = 59)
     assert max(seen) < len(prices) - 1
+
+
+def test_rejects_warmup_too_large():
+    prices = np.linspace(100.0, 110.0, 20)   # 19 returns
+    with pytest.raises(ValueError):
+        hmm_walk_forward_states(prices, warmup=19)
