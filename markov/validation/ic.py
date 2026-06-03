@@ -45,3 +45,73 @@ def pooled_ic(per_symbol_ics):
     return {"mean": float(fin.mean()),
             "std": float(fin.std(ddof=0)),
             "n": int(len(fin))}
+
+
+def correlation_matrix(features):
+    """(names, matrice Pearson) pe perechile cu suprapunere finita."""
+    names = list(features.keys())
+    cols = [np.asarray(features[n], dtype=float) for n in names]
+    k = len(names)
+    corr = np.eye(k)
+    for i in range(k):
+        for j in range(i + 1, k):
+            m = np.isfinite(cols[i]) & np.isfinite(cols[j])
+            if m.sum() >= 3 and cols[i][m].std() > 0 and cols[j][m].std() > 0:
+                c = float(np.corrcoef(cols[i][m], cols[j][m])[0, 1])
+            else:
+                c = float("nan")
+            corr[i, j] = corr[j, i] = c
+    return names, corr
+
+
+def cluster_families(names, corr, thr=0.7):
+    """Grupeaza indicatorii cu |corelatie| >= thr (union-find simplu)."""
+    parent = list(range(len(names)))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]; a = parent[a]
+        return a
+
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            if np.isfinite(corr[i, j]) and abs(corr[i, j]) >= thr:
+                parent[find(i)] = find(j)
+    groups = {}
+    for idx, name in enumerate(names):
+        groups.setdefault(find(idx), []).append(name)
+    return list(groups.values())
+
+
+def marginal_ic(features, fwd_ret):
+    """Pentru fiecare indicator: IC al rezidualului dupa regresie liniara pe ceilalti.
+
+    Masoara cat adauga indicatorul PESTE restul echipei (ortogonalitate).
+    Aliniaza pe randurile finite comune tuturor feature-urilor + fwd_ret.
+    """
+    names = list(features.keys())
+    cols = [np.asarray(features[n], dtype=float) for n in names]
+    r = np.asarray(fwd_ret, dtype=float)
+    mask = np.isfinite(r)
+    for c in cols:
+        mask &= np.isfinite(c)
+    out = {}
+    if mask.sum() < 5:
+        return {n: float("nan") for n in names}
+    X = np.column_stack([c[mask] for c in cols])
+    rr = r[mask]
+    for idx, name in enumerate(names):
+        y = X[:, idx]
+        others = np.delete(X, idx, axis=1)
+        if others.shape[1] == 0:
+            resid = y - y.mean()
+        else:
+            A = np.column_stack([others, np.ones(len(y))])
+            coef, *_ = np.linalg.lstsq(A, y, rcond=None)
+            resid = y - A @ coef
+        scale = np.abs(y).max()
+        if scale > 0 and np.abs(resid).max() <= 1e-9 * scale:
+            out[name] = 0.0
+        else:
+            out[name] = spearman_ic(resid, rr)
+    return out
