@@ -45,6 +45,9 @@ def main():
     ap.add_argument("--cheap-threshold", type=float,
                     default=_env_float("CHEAP_CAPE_THRESHOLD", 22.0),
                     help="CAPE at/below which a 'be greedy' banner is prepended")
+    ap.add_argument("--aggressive-threshold", type=float,
+                    default=_env_float("AGGRESSIVE_CAPE_THRESHOLD", 15.0),
+                    help="CAPE at/below which a louder 'buy aggressively' banner fires")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the alert instead of sending it")
     args = ap.parse_args()
@@ -64,7 +67,8 @@ def main():
     candidates = cq.to_dict("records")
 
     msg = build_alert(asof, cape, label, candidates,
-                      cheap_threshold=args.cheap_threshold)
+                      cheap_threshold=args.cheap_threshold,
+                      aggressive_threshold=args.aggressive_threshold)
 
     if args.dry_run:
         print(msg)

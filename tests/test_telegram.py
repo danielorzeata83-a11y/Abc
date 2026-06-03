@@ -31,6 +31,20 @@ def test_banner_is_stronger_when_historically_cheap():
     assert "14" in strong
 
 
+def test_aggressive_tier_has_distinct_wording():
+    mild = cheap_market_banner(20.0, threshold=22.0, aggressive=15.0)
+    aggressive = cheap_market_banner(14.0, threshold=22.0, aggressive=15.0)
+    assert "agresiv" in aggressive.lower()
+    assert "agresiv" not in mild.lower()
+
+
+def test_aggressive_threshold_is_configurable():
+    # raise the aggressive bar to 18 -> CAPE 17 should trigger the loud tier
+    b = cheap_market_banner(17.0, threshold=22.0, aggressive=18.0)
+    assert "agresiv" in b.lower()
+    assert "17" in b
+
+
 def test_build_alert_prepends_banner_when_cheap():
     msg = build_alert("2026-06-02", cape=18.0, cape_label="NORMAL",
                       candidates=[], cheap_threshold=22.0)

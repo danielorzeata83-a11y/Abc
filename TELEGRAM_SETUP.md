@@ -42,9 +42,12 @@ Repo pe GitHub → tab **Actions** → workflow **Daily Telegram alert** →
 ## Alertă „be greedy" (piața devine ieftină)
 Când CAPE coboară sub un prag, mesajul primește sus un banner proeminent
 `>>> PIATA A DEVENIT IEFTINA <<<` (și mai puternic sub 15, nivel rar istoric).
-- Pragul implicit e **22**. Îl schimbi cu secretul opțional `CHEAP_CAPE_THRESHOLD`
-  în GitHub (Settings → Secrets → Actions) sau cu `--cheap-threshold 22` local.
-- Acum (CAPE ~30.8) bannerul e dormant; se trezește singur la o corecție reală.
+Două praguri configurabile:
+- **Prag 1 — „piața a devenit ieftină"** (implicit **22**): secret opțional
+  `CHEAP_CAPE_THRESHOLD` sau `--cheap-threshold 22` local.
+- **Prag 2 — „CUMPĂRĂ AGRESIV"** (implicit **15**, rar istoric): secret opțional
+  `AGGRESSIVE_CAPE_THRESHOLD` sau `--aggressive-threshold 15` local.
+- Acum (CAPE ~30.8) ambele sunt dormante; se trezesc singure la o corecție reală.
 
 ## Test local (opțional)
 ```
