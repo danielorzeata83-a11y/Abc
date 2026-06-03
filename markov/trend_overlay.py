@@ -70,3 +70,15 @@ def lag_cost(prices, bottom_idx, confirm_idx):
     """
     prices = np.asarray(prices, dtype=float)
     return prices[confirm_idx] / prices[bottom_idx] - 1.0
+
+
+def count_whipsaws(crossovers, min_hold_days):
+    """Count crossovers reversed within `min_hold_days` of the prior one.
+
+    These are the false signals that flip-flop and chew up a follower.
+    """
+    n = 0
+    for a, b in zip(crossovers, crossovers[1:]):
+        if b.idx - a.idx < min_hold_days:
+            n += 1
+    return n

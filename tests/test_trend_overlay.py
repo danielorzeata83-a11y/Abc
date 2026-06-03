@@ -59,3 +59,17 @@ from markov.trend_overlay import lag_cost
 def test_lag_cost_is_return_from_bottom_to_confirmation():
     prices = [100.0, 50.0, 60.0, 75.0]   # bottom idx 1 (=50), confirm idx 3 (=75)
     assert lag_cost(prices, bottom_idx=1, confirm_idx=3) == pytest.approx(0.5)
+
+
+from markov.trend_overlay import count_whipsaws
+
+
+def test_count_whipsaws_counts_quick_reversals():
+    xs = [Crossover(10, "golden"), Crossover(15, "death"),   # 5 days  -> whipsaw
+          Crossover(100, "golden"), Crossover(160, "death")] # 60 days -> ok
+    assert count_whipsaws(xs, min_hold_days=30) == 1
+
+
+def test_count_whipsaws_zero_when_all_held_long():
+    xs = [Crossover(10, "golden"), Crossover(100, "death")]
+    assert count_whipsaws(xs, min_hold_days=30) == 0
