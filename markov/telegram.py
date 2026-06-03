@@ -14,13 +14,36 @@ import urllib.request
 DISCLAIMER = "NU este consiliere de investitii."
 
 
-def build_alert(asof, cape, cape_label, candidates):
+def cheap_market_banner(cape, threshold=22.0):
+    """A prominent 'be greedy' banner, only when the market has gotten cheap.
+
+    Returns "" when CAPE is above `threshold` (the common case -- stays quiet).
+    Below the threshold the market is attractively priced; below 15 it is
+    historically cheap (rare), so the message is louder. Not investment advice.
+    """
+    if not (cape <= threshold):
+        return ""
+    if cape <= 15:
+        return (f">>> PIATA E FOARTE IEFTINA <<<\n"
+                f"CAPE {cape:.1f} -- nivel rar istoric (sub 15).\n"
+                f"Be greedy when others are fearful.")
+    return (f">>> PIATA A DEVENIT IEFTINA <<<\n"
+            f"CAPE {cape:.1f} (sub pragul {threshold:.0f}).\n"
+            f"Be greedy when others are fearful.")
+
+
+def build_alert(asof, cape, cape_label, candidates, cheap_threshold=22.0):
     """Format the daily alert message.
 
     candidates: iterable of dicts with Symbol / Sector / Price/Earnings /
     value_pct / quality_pct (as produced by markov.screener.compute_scores).
+    A 'be greedy' banner is prepended when CAPE <= cheap_threshold.
     """
-    lines = [
+    lines = []
+    banner = cheap_market_banner(cape, cheap_threshold)
+    if banner:
+        lines += [banner, ""]
+    lines += [
         f"Abc -- raport {asof}",
         f"CAPE {cape:.1f} ({cape_label})",
         "",

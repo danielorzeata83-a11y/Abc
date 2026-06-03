@@ -39,4 +39,5 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CHEAP_CAPE_THRESHOLD: ${{ secrets.CHEAP_CAPE_THRESHOLD }}  # optional
         run: python telegram_alert.py

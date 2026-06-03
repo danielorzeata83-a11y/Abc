@@ -8,7 +8,39 @@ an injectable opener so we can assert the URL/payload without a network call.
 
 import json
 import pytest
-from markov.telegram import build_alert, send_message, DISCLAIMER
+from markov.telegram import (build_alert, send_message, DISCLAIMER,
+                             cheap_market_banner)
+
+
+def test_no_banner_when_market_is_expensive():
+    assert cheap_market_banner(30.8, threshold=22.0) == ""
+
+
+def test_banner_fires_at_or_below_threshold():
+    b = cheap_market_banner(21.0, threshold=22.0)
+    assert b != ""
+    assert "21" in b
+    assert "ieftin" in b.lower() or "greedy" in b.lower()
+
+
+def test_banner_is_stronger_when_historically_cheap():
+    mild = cheap_market_banner(20.0, threshold=22.0)
+    strong = cheap_market_banner(14.0, threshold=22.0)
+    # the <15 case should be louder than a merely-below-threshold case
+    assert strong != mild
+    assert "14" in strong
+
+
+def test_build_alert_prepends_banner_when_cheap():
+    msg = build_alert("2026-06-02", cape=18.0, cape_label="NORMAL",
+                      candidates=[], cheap_threshold=22.0)
+    assert "greedy" in msg.lower() or "ieftin" in msg.lower()
+
+
+def test_build_alert_no_banner_when_expensive():
+    msg = build_alert("2026-06-02", cape=30.8, cape_label="EXPENSIVE",
+                      candidates=[], cheap_threshold=22.0)
+    assert "greedy" not in msg.lower()
 
 
 def _cands():

@@ -39,6 +39,13 @@ Repo pe GitHub → tab **Actions** → workflow **Daily Telegram alert** →
 - Datele CAPE (Shiller) se mișcă lent; reîmprospătează din când în când
   `ci_data/sp500_monthly.csv` (sursă: multpl.com/shiller-pe).
 
+## Alertă „be greedy" (piața devine ieftină)
+Când CAPE coboară sub un prag, mesajul primește sus un banner proeminent
+`>>> PIATA A DEVENIT IEFTINA <<<` (și mai puternic sub 15, nivel rar istoric).
+- Pragul implicit e **22**. Îl schimbi cu secretul opțional `CHEAP_CAPE_THRESHOLD`
+  în GitHub (Settings → Secrets → Actions) sau cu `--cheap-threshold 22` local.
+- Acum (CAPE ~30.8) bannerul e dormant; se trezește singur la o corecție reală.
+
 ## Test local (opțional)
 ```
 python telegram_alert.py --dry-run      # vezi mesajul, fără să trimiți

@@ -25,6 +25,15 @@ def _DATA(name):
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", name)
 
 
+def _env_float(name, default):
+    """Read a float env var, tolerating absent/empty values (undefined GitHub
+    secrets arrive as an empty string)."""
+    try:
+        return float(os.environ.get(name, "").strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--monthly", default=_DATA("sp500_monthly.csv"),
@@ -33,6 +42,9 @@ def main():
                     help="fundamentals snapshot CSV for the screener")
     ap.add_argument("--token", default=os.environ.get("TELEGRAM_TOKEN"))
     ap.add_argument("--chat-id", default=os.environ.get("TELEGRAM_CHAT_ID"))
+    ap.add_argument("--cheap-threshold", type=float,
+                    default=_env_float("CHEAP_CAPE_THRESHOLD", 22.0),
+                    help="CAPE at/below which a 'be greedy' banner is prepended")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the alert instead of sending it")
     args = ap.parse_args()
@@ -51,7 +63,8 @@ def main():
         "value_pct", ascending=False)
     candidates = cq.to_dict("records")
 
-    msg = build_alert(asof, cape, label, candidates)
+    msg = build_alert(asof, cape, label, candidates,
+                      cheap_threshold=args.cheap_threshold)
 
     if args.dry_run:
         print(msg)
