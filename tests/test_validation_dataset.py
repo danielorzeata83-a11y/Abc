@@ -11,6 +11,17 @@ def test_forward_returns_horizons_and_tail_nan():
     assert np.isnan(out[2][-1]) and np.isnan(out[2][-2])
 
 
+def test_forward_realized_vol_positive_and_tail_nan():
+    # randamente zilnice cunoscute: +10%, -10%, +10% -> RMS pe 2 pasi = 0.10
+    close = np.array([100.0, 110.0, 99.0, 108.9])
+    out = dataset.forward_realized_vol(close, horizons=(1, 2))
+    r0, r1 = 0.10, -0.10
+    assert np.isclose(out[1][0], abs(r0))                    # h=1: |randament zilnic|
+    assert np.isclose(out[2][0], np.sqrt((r0**2 + r1**2) / 2))  # h=2: RMS
+    assert (out[1][np.isfinite(out[1])] >= 0).all()          # mereu pozitiva
+    assert np.isnan(out[2][-1]) and np.isnan(out[2][-2])     # coada fara viitor
+
+
 import pandas as pd
 from markov.intraday.bars import Bars
 from markov.intraday.cache import write_bars

@@ -2,7 +2,7 @@
 Fiecare iesire poarta disclaimerul. NU este consiliere de investitii.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -16,17 +16,20 @@ DISCLAIMER = "NU este consiliere de investitii. Artefact de cercetare."
 class ValidationReport:
     pooled_ic: dict
     families: list
-    marginal: dict
-    conditional: dict
-    ensemble: dict
+    marginal: dict        # {h: {indicator: ic_marginal}}
+    conditional: dict     # {indicator: {h: {regim: ic}}}
+    ensemble: dict        # ansamblu equal-weight neconditionat (directional)
     horizons: tuple
+    target: str = "return"
+    ensemble_regime: dict = field(default_factory=dict)  # ansamblu gated pe meanrev
 
     def render_text(self):
-        L = [DISCLAIMER, "", "=== Validare indicatori (A->E) ===", ""]
+        tgt = "volatilitate" if self.target == "vol" else "randament"
+        L = [DISCLAIMER, "", "=== Validare indicatori (A->E) ===",
+             f"(tinta: {tgt} forward)", ""]
         L.append("[A] Pooled IC (mean) pe orizonturi:")
-        header = "  " + "indicator".ljust(16) + "".join(f"h={h}".rjust(9)
-                                                         for h in self.horizons)
-        L.append(header)
+        L.append("  " + "indicator".ljust(16) +
+                 "".join(f"h={h}".rjust(9) for h in self.horizons))
         for name in sorted(self.pooled_ic):
             row = "  " + name.ljust(16)
             for h in self.horizons:
@@ -36,20 +39,34 @@ class ValidationReport:
         L.append("[B] Familii (corelate): " +
                  " | ".join("{" + ",".join(f) + "}" for f in self.families))
         L.append("")
-        h0 = self.horizons[0]
-        L.append(f"[C] IC marginal (h={h0}):")
-        for name in sorted(self.marginal[h0]):
-            L.append(f"  {name.ljust(16)}{self.marginal[h0][name]:+.3f}")
+        L.append("[C] IC marginal (peste restul echipei) pe orizonturi:")
+        L.append("  " + "indicator".ljust(16) +
+                 "".join(f"h={h}".rjust(9) for h in self.horizons))
+        for name in sorted(self.marginal[self.horizons[0]]):
+            row = "  " + name.ljust(16)
+            for h in self.horizons:
+                val = self.marginal[h].get(name, float("nan"))
+                row += f"{val:+.3f}".rjust(9)
+            L.append(row)
         L.append("")
-        L.append("[D] IC conditionat pe regim hurst (primul indicator, h=%d):" % h0)
+        L.append("[D] IC conditionat pe regim Hurst (meanrev | trend) pe orizonturi:")
         for name in sorted(self.conditional):
-            parts = " ".join(f"{r}={v:+.3f}" for r, v in self.conditional[name].items())
-            L.append(f"  {name.ljust(16)}{parts}")
+            L.append(f"  {name}")
+            for h in self.horizons:
+                regs = self.conditional[name].get(h, {})
+                parts = "  ".join(f"{r}={regs[r]:+.3f}" for r in sorted(regs))
+                L.append(f"    h={h}: {parts}")
         L.append("")
-        e = self.ensemble
         L.append("[E] Ansamblu equal-weight (walk-forward, pooled simboluri):")
-        L.append(f"  net_return={e['net_return']:+.3f}  sharpe={e['sharpe']:+.2f}"
-                 f"  p_value={e['p_value']:.3f}  n_days={e['n_days']}")
+        e = self.ensemble
+        L.append(f"  neconditionat : net_return={e['net_return']:+.3f}"
+                 f"  sharpe={e['sharpe']:+.2f}  p_value={e['p_value']:.3f}"
+                 f"  n_days={e['n_days']:.0f}")
+        if self.ensemble_regime:
+            g = self.ensemble_regime
+            L.append(f"  gated meanrev : net_return={g['net_return']:+.3f}"
+                     f"  sharpe={g['sharpe']:+.2f}  p_value={g['p_value']:.3f}"
+                     f"  n_days={g['n_days']:.0f}")
         L.append("")
         L.append(DISCLAIMER)
         return "\n".join(L)
@@ -58,22 +75,28 @@ class ValidationReport:
         import csv
         with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
-            w.writerow(["# " + DISCLAIMER])
-            w.writerow(["indicator"] + [f"pooled_ic_h{h}" for h in self.horizons] +
-                       [f"marginal_ic_h{self.horizons[0]}"])
+            w.writerow(["# " + DISCLAIMER + f" tinta={self.target}"])
+            w.writerow(["indicator"] +
+                       [f"pooled_ic_h{h}" for h in self.horizons] +
+                       [f"marginal_ic_h{h}" for h in self.horizons])
             for name in sorted(self.pooled_ic):
                 w.writerow([name] +
                            [self.pooled_ic[name][h]["mean"] for h in self.horizons] +
-                           [self.marginal[self.horizons[0]].get(name, "")])
+                           [self.marginal[h].get(name, "") for h in self.horizons])
 
 
 def run_validation(symbols, data_dir, indicators, horizon_tf="1day",
-                   horizons=(1, 5, 21)):
-    """Ruleaza A->E si intoarce un ValidationReport. Pooled pe simboluri."""
+                   horizons=(1, 5, 21), target="return"):
+    """Ruleaza A->E si intoarce un ValidationReport. Pooled pe simboluri.
+
+    target='return' (directie) sau 'vol' (volatilitate realizata forward). A/C/D
+    masoara IC fata de tinta aleasa; E ramane mereu directional (edge tranzactionabil).
+    """
     if not horizons:
         raise ValueError("horizons trebuie sa contina cel putin un orizont")
-    panel = build_panel(symbols, data_dir, indicators, horizon_tf, horizons)
+    panel = build_panel(symbols, data_dir, indicators, horizon_tf, horizons, target)
     names = list(indicators.keys())
+    labels_by_sym = {s: regime.hurst_regime(panel.close[s]) for s in symbols}
 
     pooled = {}
     for name in names:
@@ -93,23 +116,29 @@ def run_validation(symbols, data_dir, indicators, horizon_tf="1day",
         fwd = np.concatenate([panel.returns[s][h] for s in symbols])
         marginal[h] = ic.marginal_ic(concat, fwd)
 
-    h0 = horizons[0]
     conditional = {}
     for name in names:
-        accum = {}
-        for s in symbols:
-            labels = regime.hurst_regime(panel.close[s])
-            cic = regime.conditional_ic(panel.features[s][name],
-                                        panel.returns[s][h0], labels)
-            for r, v in cic.items():
-                accum.setdefault(r, []).append(v)
-        conditional[name] = {r: ic.pooled_ic(vs)["mean"] for r, vs in accum.items()}
+        conditional[name] = {}
+        for h in horizons:
+            accum = {}
+            for s in symbols:
+                cic = regime.conditional_ic(panel.features[s][name],
+                                            panel.returns[s][h], labels_by_sym[s])
+                for r, v in cic.items():
+                    accum.setdefault(r, []).append(v)
+            conditional[name][h] = {r: ic.pooled_ic(vs)["mean"]
+                                    for r, vs in accum.items()}
 
-    metrics = []
+    uncond, gated = [], []
     for s in symbols:
-        metrics.append(ensemble.evaluate_ensemble(panel.features[s], panel.close[s]))
-    ens = {k: float(np.mean([m[k] for m in metrics]))
+        uncond.append(ensemble.evaluate_ensemble(panel.features[s], panel.close[s]))
+        gated.append(ensemble.evaluate_ensemble(
+            panel.features[s], panel.close[s],
+            regime_labels=labels_by_sym[s], active_regime="meanrev"))
+    ens = {k: float(np.mean([m[k] for m in uncond]))
            for k in ("net_return", "sharpe", "p_value", "n_days")}
+    ens_mr = {k: float(np.mean([m[k] for m in gated]))
+              for k in ("net_return", "sharpe", "p_value", "n_days")}
 
     return ValidationReport(pooled, families, marginal, conditional, ens,
-                            tuple(horizons))
+                            tuple(horizons), target=target, ensemble_regime=ens_mr)

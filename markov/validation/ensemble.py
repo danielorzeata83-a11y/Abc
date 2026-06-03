@@ -55,10 +55,13 @@ def equal_weight_signal(features, causal=True):
         return np.nanmean(zs, axis=1)
 
 
-def evaluate_ensemble(features, prices, warmup=20, cost=0.0, n_perm=1000, seed=0):
+def evaluate_ensemble(features, prices, warmup=20, cost=0.0, n_perm=1000, seed=0,
+                      regime_labels=None, active_regime=None):
     """Construieste semnalul cauzal -> strategie walk-forward -> metrici OOS.
 
     Pozitia in ziua t = tanh(semnal_equal_weight_cauzal[t]), folosind doar trecutul.
+    Daca regime_labels + active_regime sunt date, pozitia e ZERO in afara regimului
+    tinta (etichetele Hurst sunt cauzale: fereastra trailing -> fara look-ahead).
     Returneaza net_return, sharpe (anualizat ~252), p_value (permutation test),
     si n_days. NU este consiliere de investitii.
     """
@@ -66,6 +69,9 @@ def evaluate_ensemble(features, prices, warmup=20, cost=0.0, n_perm=1000, seed=0
     signal = equal_weight_signal(features, causal=True)
     position = np.tanh(signal)
     position = np.where(np.isfinite(position), position, 0.0)
+    if regime_labels is not None and active_regime is not None:
+        labels = np.asarray(regime_labels, dtype=object)
+        position = np.where(labels == active_regime, position, 0.0)
 
     def strategy(past):
         t = len(past) - 1
