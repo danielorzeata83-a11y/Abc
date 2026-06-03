@@ -25,7 +25,10 @@ def test_render_contains_all_layers_and_disclaimer():
                            states, state_start=1, bottom_idx=29, stats=stats)
     assert svg.startswith("<svg")
     assert svg.count("<polyline") >= 3          # price + 2 SMAs
-    assert "<rect" in svg                         # regime bands + lesson box
+    # >=2 rects: regime bands (>=1) PLUS the lesson box -- so the check does not
+    # pass vacuously if the regime bands are ever dropped.
+    assert svg.count("<rect") >= 2
+    assert "#fde8e8" in svg or "#e6f4ea" in svg   # a regime band colour rendered
     assert "CROSS" in svg                         # crossover marker title
     assert "fund real" in svg                     # hindsight bottom label
     assert DISCLAIMER in svg

@@ -68,7 +68,7 @@ def main():
     html = (f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
             f"<title>{args.ticker} trend overlay</title></head><body>"
             f"<h1>{args.ticker}: hindsight vs real-time</h1>{svg}</body></html>")
-    with open(out, "w") as f:
+    with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"Wrote {out}")
 
