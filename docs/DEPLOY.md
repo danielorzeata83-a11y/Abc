@@ -38,30 +38,36 @@ export ALPHAVANTAGE_API_KEY=cheia_ta_aici
 
 ---
 
-## 4. Adu datele reale (backfill DAILY — free tier, 1 apel/simbol)
+## 4. Adu datele reale (backfill DAILY, istoric adânc — `--source`)
 
-> **Important (free tier 2026):** Alpha Vantage a mutat la **premium** atât istoricul
-> **intraday** (`--months`, 15m) cât și `outputsize=full` pe daily. Pe cheie free se
-> poate doar **daily compact = ultimele ~100 zile de tranzacționare (~5 luni)**. Atât
-> e gratis. E suficient pentru un prim test al indicatorilor cu fereastră scurtă.
+> **Free tier 2026:** Alpha Vantage a mutat la **premium** și intraday-ul (`--months`,
+> 15m) și `outputsize=full` pe daily (rămâne doar ~100 zile compact). De aceea folosim
+> surse cu **istoric de zeci de ani, gratis**. Toate produc bare daily într-un apel/simbol.
 
-5 simboluri × 1 apel = **5 apeluri**, lejer sub 25/zi. Toate într-o comandă:
+**Recomandat — Stooq (fără cheie, zeci de ani):**
 ```bash
-python backfill_cli.py --daily --symbols NVDA,AAPL,MSFT,AMD,TSLA
+python backfill_cli.py --source stooq --symbols NVDA,AAPL,MSFT,AMD,TSLA
 ```
-Scriptul se oprește singur dacă lovești limita și **păstrează** ce-a adus (reia mâine).
 
-Datele ajung în `data/intraday/<SIMBOL>_15m.csv` (nume păstrat; conțin bare daily —
-pipeline-ul le resamplează la „1day" idempotent). Verifici:
+Alte surse (le ai pe toate, alege după nevoie):
+```bash
+python backfill_cli.py --source yahoo --symbols NVDA,AAPL          # fără cheie, istoric adânc
+export TWELVEDATA_API_KEY=...                                      # 800 apeluri/zi
+python backfill_cli.py --source twelvedata --symbols NVDA,AAPL,MSFT,AMD,TSLA
+python backfill_cli.py --daily --symbols NVDA                      # Alpha Vantage compact (~100)
+```
+
+Scriptul se oprește singur dacă lovești o limită și **păstrează** ce-a adus (reia mai
+târziu). Datele ajung în `data/intraday/<SIMBOL>_15m.csv` (nume păstrat; conțin bare
+daily — pipeline-ul le resamplează la „1day" idempotent). Verifici:
 ```bash
 ls -la data/intraday/
 ```
 
-> **Ce funcționează pe ~100 bare:** [A] Pooled IC, [B] Familii, [C] IC marginal și
-> [E] Ansamblu (walk-forward) dau cifre reale pe indicatorii cu fereastră scurtă
-> (volatilitate, lichiditate, salturi). Indicatorii cu fereastră lungă (hurst-100,
-> rqa-100, 52w-126) și [D] condiționarea pe regim apar `nan` — au nevoie de mai mult
-> istoric decât oferă free tier. E o limitare onestă a datelor, nu un bug.
+> **Cu istoric adânc (Stooq/Yahoo/Twelve Data)** se activează TOATE secțiunile:
+> [A] Pooled IC, [B] Familii, [C] IC marginal, [D] condiționare pe regim, [E] Ansamblu.
+> Pe Alpha Vantage compact (~100 bare) doar A/B/C/E pe indicatorii cu fereastră scurtă;
+> hurst-100, rqa-100, 52w-126 și [D] apar `nan` (prea puțin istoric — limitare de date).
 >
 > Graficul intraday pe 15m (pasul 6) e separat: cu cheia free doar ultimele ~30 zile
 > (sub-proiect ulterior). Validarea nu depinde de el.

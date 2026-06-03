@@ -7,12 +7,15 @@ Doua moduri:
   - 15min (implicit): TIME_SERIES_INTRADAY luna cu luna. ATENTIE: parametrul `month`
     a devenit endpoint PREMIUM la Alpha Vantage -- pe cheie free pica imediat.
 
-    export ALPHAVANTAGE_API_KEY=...
-    python backfill_cli.py --daily --symbols NVDA,AAPL,MSFT,AMD,TSLA   # 5 apeluri, gratis
-    python backfill_cli.py --symbols NVDA,AAPL --months 12             # 15m (necesita premium)
+Surse daily (--source), toate cu istoric adanc, intr-un apel/simbol:
+    python backfill_cli.py --source stooq  --symbols NVDA,AAPL,MSFT,AMD,TSLA  # fara cheie
+    python backfill_cli.py --source yahoo  --symbols NVDA,AAPL                # fara cheie
+    python backfill_cli.py --source twelvedata --symbols NVDA  # TWELVEDATA_API_KEY (800/zi)
+    python backfill_cli.py --daily --symbols NVDA              # Alpha Vantage compact (~100)
+    python backfill_cli.py --symbols NVDA,AAPL --months 12     # 15m AV (necesita premium)
 
-Cheia se ia din mediu (ALPHAVANTAGE_API_KEY), niciodata hardcodata sau logata.
-NU este consiliere de investitii.
+Cheile se iau din mediu (ALPHAVANTAGE_API_KEY / TWELVEDATA_API_KEY), niciodata
+hardcodate sau logate. NU este consiliere de investitii.
 """
 
 import argparse
@@ -24,6 +27,7 @@ import pandas as pd
 from markov.data_providers import DataUnavailable
 from markov.intraday.alphavantage import (get_daily_provider,
                                           get_intraday_provider)
+from markov.intraday.daily_sources import get_daily_source
 from markov.intraday.cache import (backfill_months, merge_bars, read_bars,
                                    write_bars)
 from markov.intraday.service import Config
@@ -73,12 +77,31 @@ def run_backfill_daily(symbols, data_dir, provider, sleeper=time.sleep,
     return calls
 
 
+def _provider_from_source(source):
+    """Construieste providerul daily pentru --source, luand cheile din mediu."""
+    if source in ("stooq", "yahoo"):
+        return get_daily_source(source)              # fara cheie
+    if source == "twelvedata":
+        key = os.environ.get("TWELVEDATA_API_KEY", "").strip()
+        if not key:
+            raise SystemExit("Lipseste TWELVEDATA_API_KEY in mediu.")
+        return get_daily_source(f"td:{key}")
+    if source == "alphavantage":
+        key = os.environ.get("ALPHAVANTAGE_API_KEY", "").strip()
+        if not key:
+            raise SystemExit("Lipseste ALPHAVANTAGE_API_KEY in mediu.")
+        return get_daily_provider(f"av:{key}")
+    raise SystemExit(f"sursa necunoscuta: {source}")
+
+
 def main(argv=None, provider=None, sleeper=time.sleep):
-    ap = argparse.ArgumentParser(description="Backfill cache de la Alpha Vantage.")
+    ap = argparse.ArgumentParser(description="Backfill cache de la diverse surse.")
     ap.add_argument("--symbols", help="lista simboluri separate prin virgula")
     ap.add_argument("--months", type=int, default=12, help="cate luni in urma (mod 15m)")
+    ap.add_argument("--source", choices=["stooq", "yahoo", "twelvedata", "alphavantage"],
+                    help="sursa daily cu istoric adanc (recomandat: stooq)")
     ap.add_argument("--daily", action="store_true",
-                    help="istoric daily complet (free, 1 apel/simbol) -- recomandat")
+                    help="daily Alpha Vantage compact (~100 bare); echiv. --source alphavantage")
     ap.add_argument("--data-dir")
     args = ap.parse_args(argv)
 
@@ -86,15 +109,18 @@ def main(argv=None, provider=None, sleeper=time.sleep):
     symbols = ([s.strip().upper() for s in args.symbols.split(",") if s.strip()]
                if args.symbols else list(cfg.watchlist))
     data_dir = args.data_dir or cfg.data_dir
+    daily_mode = bool(args.source) or args.daily
 
     if provider is None:
-        key = os.environ.get("ALPHAVANTAGE_API_KEY", "").strip()
-        if not key:
-            raise SystemExit("Lipseste ALPHAVANTAGE_API_KEY in mediu.")
-        spec = f"av:{key}"
-        provider = get_daily_provider(spec) if args.daily else get_intraday_provider(spec)
+        if daily_mode:
+            provider = _provider_from_source(args.source or "alphavantage")
+        else:
+            key = os.environ.get("ALPHAVANTAGE_API_KEY", "").strip()
+            if not key:
+                raise SystemExit("Lipseste ALPHAVANTAGE_API_KEY in mediu.")
+            provider = get_intraday_provider(f"av:{key}")
 
-    if args.daily:
+    if daily_mode:
         run_backfill_daily(symbols, data_dir, provider, sleeper=sleeper)
     else:
         run_backfill(symbols, args.months, data_dir, provider, sleeper=sleeper)
