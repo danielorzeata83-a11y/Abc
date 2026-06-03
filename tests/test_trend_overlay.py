@@ -3,7 +3,15 @@
 import numpy as np
 import pytest
 
-from markov.trend_overlay import sma
+from markov.trend_overlay import (
+    Crossover,
+    count_whipsaws,
+    hindsight_bottom,
+    lag_cost,
+    signal_drawdown,
+    sma,
+    sma_crossovers,
+)
 
 
 def test_sma_trailing_average_with_nan_warmup():
@@ -20,7 +28,10 @@ def test_sma_rejects_nonpositive_window():
         sma([1.0, 2.0], window=0)
 
 
-from markov.trend_overlay import sma_crossovers, Crossover
+def test_sma_all_nan_when_series_shorter_than_window():
+    out = sma([1.0, 2.0], window=5)
+    assert len(out) == 2
+    assert np.isnan(out).all()
 
 
 def test_crossover_detects_single_golden_cross():
@@ -40,11 +51,13 @@ def test_crossover_none_on_monotonic_series():
     assert sma_crossovers(prices, fast=5, slow=20) == []
 
 
-from markov.trend_overlay import hindsight_bottom
-
-
 def test_hindsight_bottom_is_global_min_index():
     prices = [100.0, 80.0, 50.0, 70.0, 120.0]   # V-shape, min at idx 2
+    assert hindsight_bottom(prices) == 2
+
+
+def test_hindsight_bottom_ignores_nan():
+    prices = [100.0, np.nan, 50.0, np.nan, 120.0]   # min among non-NaN at idx 2
     assert hindsight_bottom(prices) == 2
 
 
@@ -53,15 +66,9 @@ def test_hindsight_bottom_rejects_empty():
         hindsight_bottom([])
 
 
-from markov.trend_overlay import lag_cost
-
-
 def test_lag_cost_is_return_from_bottom_to_confirmation():
     prices = [100.0, 50.0, 60.0, 75.0]   # bottom idx 1 (=50), confirm idx 3 (=75)
     assert lag_cost(prices, bottom_idx=1, confirm_idx=3) == pytest.approx(0.5)
-
-
-from markov.trend_overlay import count_whipsaws
 
 
 def test_count_whipsaws_counts_quick_reversals():
@@ -73,9 +80,6 @@ def test_count_whipsaws_counts_quick_reversals():
 def test_count_whipsaws_zero_when_all_held_long():
     xs = [Crossover(10, "golden"), Crossover(100, "death")]
     assert count_whipsaws(xs, min_hold_days=30) == 0
-
-
-from markov.trend_overlay import signal_drawdown
 
 
 def test_signal_drawdown_worst_peak_to_trough():

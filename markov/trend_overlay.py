@@ -64,9 +64,10 @@ def hindsight_bottom(prices):
 
 
 def lag_cost(prices, bottom_idx, confirm_idx):
-    """Return between the real bottom and the day the signal confirmed.
+    """Fractional return from the real bottom to the day the signal confirmed.
 
-    Positive = how much you would have missed waiting for the golden cross.
+    Positive = how much you would have missed waiting for the golden cross
+    (e.g. 0.5 = the price was already 50% above the bottom by confirmation).
     """
     prices = np.asarray(prices, dtype=float)
     return prices[confirm_idx] / prices[bottom_idx] - 1.0
@@ -75,7 +76,9 @@ def lag_cost(prices, bottom_idx, confirm_idx):
 def count_whipsaws(crossovers, min_hold_days):
     """Count crossovers reversed within `min_hold_days` of the prior one.
 
-    These are the false signals that flip-flop and chew up a follower.
+    These are the false signals that flip-flop and chew up a follower. Assumes
+    `crossovers` alternate golden/death, as produced by `sma_crossovers` (each
+    is a sign flip), so any close consecutive pair is a genuine reversal.
     """
     n = 0
     for a, b in zip(crossovers, crossovers[1:]):
