@@ -49,3 +49,15 @@ def sma_crossovers(prices, fast=50, slow=200):
             out.append(Crossover(i, "golden" if above else "death"))
         prev = above
     return out
+
+
+def hindsight_bottom(prices):
+    """Index of the major bottom (global minimum).
+
+    The clean, parameter-free 'from here up it was bull' marker -- only
+    knowable in hindsight. That is the whole point of the overlay.
+    """
+    prices = np.asarray(prices, dtype=float)
+    if len(prices) == 0:
+        raise ValueError("empty price series")
+    return int(np.nanargmin(prices))

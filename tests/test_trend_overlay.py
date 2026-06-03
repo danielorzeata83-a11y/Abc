@@ -38,3 +38,16 @@ def test_crossover_detects_single_golden_cross():
 def test_crossover_none_on_monotonic_series():
     prices = list(np.linspace(10, 100, 60))   # always rising, fast stays above
     assert sma_crossovers(prices, fast=5, slow=20) == []
+
+
+from markov.trend_overlay import hindsight_bottom
+
+
+def test_hindsight_bottom_is_global_min_index():
+    prices = [100.0, 80.0, 50.0, 70.0, 120.0]   # V-shape, min at idx 2
+    assert hindsight_bottom(prices) == 2
+
+
+def test_hindsight_bottom_rejects_empty():
+    with pytest.raises(ValueError):
+        hindsight_bottom([])
