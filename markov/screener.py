@@ -113,6 +113,11 @@ def compute_scores(df, min_peers=4):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         df["value_pct"] = np.nanmean(np.vstack(vpcts), axis=0)
+    # A stock with no valid positive P/E has no earnings to be "cheap" against;
+    # ranking it on P/B/P/S alone is a value-trap false positive (e.g. firms
+    # with negative earnings). Disqualify it from the value score entirely.
+    pe = pd.to_numeric(df["Price/Earnings"], errors="coerce").to_numpy(float)
+    df.loc[~((pe > 0) & np.isfinite(pe)), "value_pct"] = np.nan
     df["quality_pct"] = _ranked_quality(df, min_peers)
 
     def quadrant(row):

@@ -51,6 +51,43 @@ def test_quadrants_constant_has_four():
     assert len(QUADRANTS) == 4
 
 
+def test_no_pe_cannot_be_cheap_quality():
+    # A stock with no valid P/E (negative/zero earnings) must NOT surface as a
+    # CHEAP+QUALITY candidate even if P/B and P/S look cheap and quality is good.
+    # P/E nan = no earnings to be "cheap" against -> value-trap false positive.
+    df = pd.DataFrame({
+        "Symbol": ["NOPE", "A", "B", "C"],
+        "Sector": ["Tech"] * 4,
+        "Price/Earnings": [float("nan"), 30.0, 35.0, 40.0],
+        "Price/Book": [0.5, 5.0, 5.5, 6.0],     # NOPE looks cheap on P/B
+        "Price/Sales": [0.5, 5.0, 5.5, 6.0],    # and on P/S
+        "Market Cap": [1e9] * 4,
+        # Sales=MktCap/PS; NOPE=2e9, peers=2e8. EBITDA chosen so NOPE has the
+        # HIGHEST margin (0.5) -> genuinely high quality, isolating P/E as the
+        # only thing that should keep it out of CHEAP+QUALITY.
+        "EBITDA": [1e9, 2e7, 2e7, 2e7],
+        "Dividend Yield": [0.0] * 4,
+    })
+    out = compute_scores(df).set_index("Symbol")
+    assert out.loc["NOPE", "quality_pct"] >= 50     # genuinely high quality...
+    assert out.loc["NOPE", "quadrant"] != "CHEAP + QUALITY"  # ...but no P/E -> blocked
+
+
+def test_zero_pe_cannot_be_cheap_quality():
+    df = pd.DataFrame({
+        "Symbol": ["ZERO", "A", "B", "C"],
+        "Sector": ["Tech"] * 4,
+        "Price/Earnings": [0.0, 30.0, 35.0, 40.0],
+        "Price/Book": [0.5, 5.0, 5.5, 6.0],
+        "Price/Sales": [0.5, 5.0, 5.5, 6.0],
+        "Market Cap": [1e9] * 4,
+        "EBITDA": [1e9, 2e7, 2e7, 2e7],
+        "Dividend Yield": [0.0] * 4,
+    })
+    out = compute_scores(df).set_index("Symbol")
+    assert out.loc["ZERO", "quadrant"] != "CHEAP + QUALITY"
+
+
 def test_financials_use_roe_when_no_ebitda():
     # Banks have no EBITDA -> quality should fall back to ROE (=PB/PE), not n/a
     df = pd.DataFrame({
