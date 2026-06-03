@@ -3,6 +3,8 @@ look-ahead-ul; full-sample doar pentru afisare descriptiva. Evaluarea ruleaza pr
 backtest.walk_forward + significance.permutation_test. NU este consiliere de investitii.
 """
 
+import warnings
+
 import numpy as np
 
 from markov.backtest import walk_forward
@@ -36,7 +38,10 @@ def equal_weight_signal(features, causal=True):
     """Media (nanmean) z-score-urilor indicatorilor -> un singur semnal aliniat."""
     fn = zscore_causal if causal else _zscore_full
     zs = np.column_stack([fn(np.asarray(v, dtype=float)) for v in features.values()])
-    with np.errstate(invalid="ignore"):
+    # randurile de warmup pot fi integral NaN (nanmean -> "Mean of empty slice");
+    # rezultatul NaN e corect si asteptat, deci suprimam doar acel warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
         return np.nanmean(zs, axis=1)
 
 
