@@ -110,7 +110,7 @@ def test_fetch_daily_builds_url_and_returns_bars():
     b = prov.fetch("NVDA")
     assert len(b) == 2
     u = captured["url"]
-    for token in ("function=TIME_SERIES_DAILY", "outputsize=full",
+    for token in ("function=TIME_SERIES_DAILY", "outputsize=compact",
                   "KEY123", "symbol=NVDA"):
         assert token in u
 

@@ -48,3 +48,17 @@ def test_marginal_ic_of_duplicate_is_zero():
     feats = {"x": base, "x_copy": base.copy()}
     marg = ic.marginal_ic(feats, fwd)
     assert abs(marg["x_copy"]) < 0.1
+
+
+def test_marginal_ic_ignores_all_nan_column():
+    """O coloana complet NaN (indicator cu fereastra > istoric) nu trebuie sa
+    anuleze intreaga sectiune; ceilalti indicatori primesc IC marginal real."""
+    rng = np.random.default_rng(3)
+    a = rng.normal(size=120)
+    b = rng.normal(size=120)
+    fwd = a * 0.5 + rng.normal(size=120) * 0.1
+    dead = np.full(120, np.nan)                 # ex. high_52w_prox pe istoric scurt
+    marg = ic.marginal_ic({"a": a, "b": b, "dead": dead}, fwd)
+    assert np.isnan(marg["dead"])               # onest: fara date -> nan
+    assert np.isfinite(marg["a"]) and np.isfinite(marg["b"])  # restul, real
+    assert abs(marg["a"]) > 0.2                 # 'a' chiar prezice fwd

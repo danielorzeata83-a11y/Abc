@@ -40,10 +40,10 @@ export ALPHAVANTAGE_API_KEY=cheia_ta_aici
 
 ## 4. Adu datele reale (backfill DAILY — free tier, 1 apel/simbol)
 
-> **Important:** Alpha Vantage a mutat istoricul **intraday** (`--months`, 15m) la
-> endpoint **premium**. Pe cheie free pică imediat. Folosim în schimb istoricul
-> **daily**, care e gratis, adânc (20+ ani) și exact granularitatea cerută de motorul
-> de validare (orizonturi 1/5/21 zile).
+> **Important (free tier 2026):** Alpha Vantage a mutat la **premium** atât istoricul
+> **intraday** (`--months`, 15m) cât și `outputsize=full` pe daily. Pe cheie free se
+> poate doar **daily compact = ultimele ~100 zile de tranzacționare (~5 luni)**. Atât
+> e gratis. E suficient pentru un prim test al indicatorilor cu fereastră scurtă.
 
 5 simboluri × 1 apel = **5 apeluri**, lejer sub 25/zi. Toate într-o comandă:
 ```bash
@@ -57,8 +57,14 @@ pipeline-ul le resamplează la „1day" idempotent). Verifici:
 ls -la data/intraday/
 ```
 
-> Graficul intraday pe 15m (pasul 6) e separat: cu cheia free poți aduce doar
-> ultimele ~30 zile de 15m (sub-proiect ulterior). Validarea nu depinde de el.
+> **Ce funcționează pe ~100 bare:** [A] Pooled IC, [B] Familii, [C] IC marginal și
+> [E] Ansamblu (walk-forward) dau cifre reale pe indicatorii cu fereastră scurtă
+> (volatilitate, lichiditate, salturi). Indicatorii cu fereastră lungă (hurst-100,
+> rqa-100, 52w-126) și [D] condiționarea pe regim apar `nan` — au nevoie de mai mult
+> istoric decât oferă free tier. E o limitare onestă a datelor, nu un bug.
+>
+> Graficul intraday pe 15m (pasul 6) e separat: cu cheia free doar ultimele ~30 zile
+> (sub-proiect ulterior). Validarea nu depinde de el.
 
 ---
 

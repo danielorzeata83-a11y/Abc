@@ -88,17 +88,19 @@ class AlphaVantageIntradayProvider:
 
 
 class AlphaVantageDailyProvider:
-    """Istoric daily complet intr-un singur apel (free tier: TIME_SERIES_DAILY,
-    outputsize=full -> 20+ ani). Exact granularitatea ceruta de motorul de validare."""
+    """Istoric daily intr-un singur apel (TIME_SERIES_DAILY). Pe free tier doar
+    outputsize=compact e gratis -> ultimele ~100 zile de tranzactionare. (full =
+    20+ ani, dar e premium.) Granularitatea ceruta de motorul de validare."""
     BASE = "https://www.alphavantage.co/query"
 
-    def __init__(self, api_key, opener=None):
+    def __init__(self, api_key, opener=None, outputsize="compact"):
         self.api_key = api_key
         self._opener = opener or urllib.request.urlopen
+        self.outputsize = outputsize
 
     def fetch(self, symbol):
         params = {"function": "TIME_SERIES_DAILY", "symbol": symbol,
-                  "outputsize": "full", "apikey": self.api_key}
+                  "outputsize": self.outputsize, "apikey": self.api_key}
         url = f"{self.BASE}?{urllib.parse.urlencode(params)}"
         try:
             with self._opener(urllib.request.Request(url), timeout=30) as resp:

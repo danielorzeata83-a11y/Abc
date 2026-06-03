@@ -89,15 +89,21 @@ def marginal_ic(features, fwd_ret):
     Masoara cat adauga indicatorul PESTE restul echipei (ortogonalitate).
     Aliniaza pe randurile finite comune tuturor feature-urilor + fwd_ret.
     """
-    names = list(features.keys())
+    all_names = list(features.keys())
+    out = {n: float("nan") for n in all_names}
+    # Coloanele prea rare (ex. indicator cu fereastra > istoricul disponibil) nu pot
+    # fi nici reziduu, nici variabila de control -> le excludem ca sa nu anuleze, prin
+    # complete-case, intreaga sectiune. Indicatorii exclusi raman nan (onest).
+    names = [n for n in all_names if np.isfinite(features[n]).sum() >= 5]
+    if not names:
+        return out
     cols = [np.asarray(features[n], dtype=float) for n in names]
     r = np.asarray(fwd_ret, dtype=float)
     mask = np.isfinite(r)
     for c in cols:
         mask &= np.isfinite(c)
-    out = {}
     if mask.sum() < 5:
-        return {n: float("nan") for n in names}
+        return out
     X = np.column_stack([c[mask] for c in cols])
     rr = r[mask]
     for idx, name in enumerate(names):
