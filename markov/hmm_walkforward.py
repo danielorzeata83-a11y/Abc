@@ -91,3 +91,32 @@ def hmm_walk_forward_positions(prices, warmup=250, refit_every=60,
             positions.append(position_signal(P, today_state))
 
     return np.array(positions), warmup
+
+
+def hmm_walk_forward_states(prices, warmup=250, refit_every=60,
+                            seed=None, _fit_fn=None):
+    """Walk-forward regime label per day (no look-ahead).
+
+    Mirrors `hmm_walk_forward_positions` but collects today's State instead of
+    a position. Returns (states, start_index) where states[k] is the regime for
+    price-day (start_index + k). Refits on past returns only, every
+    `refit_every` days.
+    """
+    prices = np.asarray(prices, dtype=float)
+    returns = daily_returns(prices)
+    n = len(returns)
+    if warmup >= n - 1:
+        raise ValueError(f"warmup={warmup} too large for {n} returns")
+
+    fit_fn = _fit_fn if _fit_fn is not None else _default_fit
+
+    states = []
+    labeller = None
+    for t in range(warmup, n):
+        if (t - warmup) % refit_every == 0 or labeller is None:
+            if _fit_fn is not None:
+                labeller, _ = fit_fn(returns[:t])
+            else:
+                labeller, _ = fit_fn(returns[:t], seed=seed)
+        states.append(labeller(returns[:t]))   # past-only labelling
+    return states, warmup
