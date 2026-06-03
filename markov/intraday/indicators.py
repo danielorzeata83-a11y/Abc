@@ -3,6 +3,11 @@
 Pure functions operating on plain numpy arrays (no Bars dependency).
 No look-ahead: output[i] uses only data up to and including index i.
 NaN is emitted for warmup bars where insufficient history exists.
+Warmup note: price-window estimators (GK, RS, Hurst, perm. entropy, RQA,
+52w-proximity, max-effect) have `window-1` leading NaNs; return-based ones
+(realized_variance, bipower_variation, roll_measure) have `window` leading NaNs
+because they need `window` returns = `window+1` prices. Align on a common index
+before stacking features into one matrix.
 
 Modules: volatility (Garman-Klass, Rogers-Satchell, RV, BV, jumps),
 complexity (Hurst, FDI, permutation entropy, RQA determinism),
