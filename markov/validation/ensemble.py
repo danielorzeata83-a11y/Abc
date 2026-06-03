@@ -15,14 +15,24 @@ def zscore_causal(x):
     """Standardizare expandabila: z[t] = (x[t]-mean(x[:t+1]))/std(x[:t+1]).
 
     Foloseste DOAR trecutul (inclusiv t). nan unde <2 puncte finite sau std==0.
+    Welford online (O(n)) pe valorile finite -> echivalent cu media/std pe x[:t+1].
     """
     x = np.asarray(x, dtype=float)
-    out = np.full(len(x), np.nan)
-    for t in range(len(x)):
-        past = x[: t + 1]
-        fin = past[np.isfinite(past)]
-        if len(fin) >= 2 and fin.std(ddof=0) > 0:
-            out[t] = (x[t] - fin.mean()) / fin.std(ddof=0)
+    n = len(x)
+    out = np.full(n, np.nan)
+    count = 0
+    mean = 0.0
+    M2 = 0.0  # suma patratelor abaterilor fata de medie
+    for t, val in enumerate(x):
+        if not np.isfinite(val):
+            continue  # nu actualizam statisticile; out[t] ramane nan
+        count += 1
+        delta = val - mean
+        mean += delta / count
+        M2 += delta * (val - mean)
+        if count >= 2 and M2 > 0.0:
+            std = np.sqrt(M2 / count)  # ddof=0, ca in implementarea initiala
+            out[t] = (val - mean) / std
     return out
 
 

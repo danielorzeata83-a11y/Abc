@@ -31,3 +31,14 @@ def test_cli_runs_and_prints_report(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "consiliere de investi" in out.lower()
     assert "Ansamblu" in out or "ansamblu" in out.lower()
+
+
+def test_cli_writes_csv_with_out(tmp_path):
+    d = str(tmp_path)
+    _seed(d, "AAA"); _seed(d, "BBB")
+    out_csv = tmp_path / "raport.csv"
+    validate_cli.main(["--symbols", "AAA,BBB", "--data-dir", d,
+                       "--horizons", "1,5", "--out", str(out_csv)])
+    assert out_csv.exists()
+    lines = out_csv.read_text(encoding="utf-8").splitlines()
+    assert lines[0].startswith("#") and "consiliere de investi" in lines[0].lower()

@@ -35,3 +35,21 @@ def test_run_validation_produces_report(tmp_path):
     assert "consiliere de investi" in txt.lower()
     assert "IC" in txt and "ansamblu" in txt.lower()
     assert "hurst" in txt
+
+
+def test_to_csv_structure(tmp_path):
+    import csv
+    d = str(tmp_path)
+    _seed(d, "AAA"); _seed(d, "BBB")
+    rep = report.run_validation(["AAA", "BBB"], d, tier1.INDICATORS,
+                                horizons=(1, 5))
+    csv_path = tmp_path / "out.csv"
+    rep.to_csv(csv_path)
+    lines = csv_path.read_text(encoding="utf-8").splitlines()
+    assert lines and lines[0].startswith("#")          # disclaimer ca prima linie
+    headers = next(csv.reader(lines[1:]))
+    for col in ("indicator", "pooled_ic_h1", "pooled_ic_h5", "marginal_ic_h1"):
+        assert col in headers
+    body = "\n".join(lines[1:])
+    for name in tier1.INDICATORS:
+        assert name in body                            # fiecare indicator are rand

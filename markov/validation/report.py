@@ -70,6 +70,8 @@ class ValidationReport:
 def run_validation(symbols, data_dir, indicators, horizon_tf="1day",
                    horizons=(1, 5, 21)):
     """Ruleaza A->E si intoarce un ValidationReport. Pooled pe simboluri."""
+    if not horizons:
+        raise ValueError("horizons trebuie sa contina cel putin un orizont")
     panel = build_panel(symbols, data_dir, indicators, horizon_tf, horizons)
     names = list(indicators.keys())
 
