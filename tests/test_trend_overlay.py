@@ -73,3 +73,17 @@ def test_count_whipsaws_counts_quick_reversals():
 def test_count_whipsaws_zero_when_all_held_long():
     xs = [Crossover(10, "golden"), Crossover(100, "death")]
     assert count_whipsaws(xs, min_hold_days=30) == 0
+
+
+from markov.trend_overlay import signal_drawdown
+
+
+def test_signal_drawdown_worst_peak_to_trough():
+    # entered at idx 0; rises to 120 then falls to 90 -> -25% from the 120 peak
+    prices = [100.0, 120.0, 90.0, 110.0]
+    assert signal_drawdown(prices, entry_idx=0, exit_idx=3) == pytest.approx(-0.25)
+
+
+def test_signal_drawdown_zero_when_monotonic_up():
+    prices = [100.0, 110.0, 130.0]
+    assert signal_drawdown(prices, entry_idx=0, exit_idx=2) == pytest.approx(0.0)

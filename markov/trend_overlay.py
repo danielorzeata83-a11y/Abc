@@ -82,3 +82,17 @@ def count_whipsaws(crossovers, min_hold_days):
         if b.idx - a.idx < min_hold_days:
             n += 1
     return n
+
+
+def signal_drawdown(prices, entry_idx, exit_idx):
+    """Worst peak-to-trough drawdown between entry and exit (inclusive).
+
+    Returns a non-positive number (e.g. -0.25 = -25%) -- the pain you sat
+    through after the signal put you in.
+    """
+    prices = np.asarray(prices, dtype=float)
+    seg = prices[entry_idx:exit_idx + 1]
+    if len(seg) == 0:
+        return 0.0
+    peak = np.maximum.accumulate(seg)
+    return float((seg / peak - 1.0).min())
