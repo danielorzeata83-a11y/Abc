@@ -18,3 +18,23 @@ def test_sma_trailing_average_with_nan_warmup():
 def test_sma_rejects_nonpositive_window():
     with pytest.raises(ValueError):
         sma([1.0, 2.0], window=0)
+
+
+from markov.trend_overlay import sma_crossovers, Crossover
+
+
+def test_crossover_detects_single_golden_cross():
+    # fast<slow then fast>slow -> exactly one golden cross, no death.
+    # downtrend for the first half, uptrend for the second half.
+    prices = list(np.linspace(100, 50, 30)) + list(np.linspace(50, 200, 30))
+    xs = sma_crossovers(prices, fast=5, slow=20)
+    kinds = [c.kind for c in xs]
+    assert "golden" in kinds
+    assert "death" not in kinds
+    # golden cross happens during the recovery (second half)
+    assert all(c.idx > 25 for c in xs if c.kind == "golden")
+
+
+def test_crossover_none_on_monotonic_series():
+    prices = list(np.linspace(10, 100, 60))   # always rising, fast stays above
+    assert sma_crossovers(prices, fast=5, slow=20) == []

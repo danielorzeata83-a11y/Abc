@@ -28,3 +28,24 @@ def sma(prices, window):
     c = np.cumsum(np.insert(prices, 0, 0.0))   # c[k] = sum(prices[:k])
     out[window - 1:] = (c[window:] - c[:-window]) / window
     return out
+
+
+def sma_crossovers(prices, fast=50, slow=200):
+    """Golden (fast SMA crosses above slow) / death (below) crossovers.
+
+    Causal: both SMAs use only past data. Returns Crossover(idx, kind) at the
+    day the sign of (fast - slow) flips. Days where either SMA is NaN are skipped.
+    """
+    f = sma(prices, fast)
+    s = sma(prices, slow)
+    diff = f - s
+    out = []
+    prev = None
+    for i in range(len(diff)):
+        if not np.isfinite(diff[i]):
+            continue
+        above = diff[i] > 0
+        if prev is not None and above != prev:
+            out.append(Crossover(i, "golden" if above else "death"))
+        prev = above
+    return out
