@@ -61,3 +61,12 @@ def hindsight_bottom(prices):
     if len(prices) == 0:
         raise ValueError("empty price series")
     return int(np.nanargmin(prices))
+
+
+def lag_cost(prices, bottom_idx, confirm_idx):
+    """Return between the real bottom and the day the signal confirmed.
+
+    Positive = how much you would have missed waiting for the golden cross.
+    """
+    prices = np.asarray(prices, dtype=float)
+    return prices[confirm_idx] / prices[bottom_idx] - 1.0

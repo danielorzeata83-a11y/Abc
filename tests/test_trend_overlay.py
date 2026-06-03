@@ -51,3 +51,11 @@ def test_hindsight_bottom_is_global_min_index():
 def test_hindsight_bottom_rejects_empty():
     with pytest.raises(ValueError):
         hindsight_bottom([])
+
+
+from markov.trend_overlay import lag_cost
+
+
+def test_lag_cost_is_return_from_bottom_to_confirmation():
+    prices = [100.0, 50.0, 60.0, 75.0]   # bottom idx 1 (=50), confirm idx 3 (=75)
+    assert lag_cost(prices, bottom_idx=1, confirm_idx=3) == pytest.approx(0.5)
