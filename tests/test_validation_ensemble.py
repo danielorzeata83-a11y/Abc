@@ -17,3 +17,24 @@ def test_equal_weight_is_mean_of_zscores():
     sig = ensemble.equal_weight_signal(feats, causal=False)
     za = (x - x.mean()) / x.std()
     assert np.allclose(sig[5:], za[5:], atol=1e-9)
+
+
+def test_evaluate_ensemble_detects_real_signal():
+    rng = np.random.default_rng(3)
+    n = 400
+    rets = rng.normal(0, 0.01, size=n)
+    prices = 100 * np.cumprod(1 + rets)
+    look = np.empty(n); look[:-1] = rets[1:]; look[-1] = 0.0
+    feats = {"oracle": look}
+    res = ensemble.evaluate_ensemble(feats, prices, warmup=20)
+    assert res["net_return"] > 0
+    assert res["p_value"] < 0.05
+
+
+def test_evaluate_ensemble_noise_not_significant():
+    rng = np.random.default_rng(4)
+    n = 400
+    prices = 100 * np.cumprod(1 + rng.normal(0, 0.01, size=n))
+    feats = {"noise": rng.normal(size=n)}
+    res = ensemble.evaluate_ensemble(feats, prices, warmup=20)
+    assert res["p_value"] > 0.05
