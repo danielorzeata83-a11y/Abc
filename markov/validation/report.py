@@ -8,6 +8,7 @@ import numpy as np
 
 from markov.validation import ic, ensemble, regime
 from markov.validation.dataset import build_panel
+from markov.validation.vol_forecast import pooled_vol_forecast, VOL_TEAM
 
 DISCLAIMER = "NU este consiliere de investitii. Artefact de cercetare."
 
@@ -22,6 +23,7 @@ class ValidationReport:
     horizons: tuple
     target: str = "return"
     ensemble_regime: dict = field(default_factory=dict)  # ansamblu gated pe meanrev
+    vol_forecast: dict = field(default_factory=dict)     # [F] doar pentru target='vol'
 
     def render_text(self):
         tgt = "volatilitate" if self.target == "vol" else "randament"
@@ -67,6 +69,19 @@ class ValidationReport:
             L.append(f"  gated meanrev : net_return={g['net_return']:+.3f}"
                      f"  sharpe={g['sharpe']:+.2f}  p_value={g['p_value']:.3f}"
                      f"  n_days={g['n_days']:.0f}")
+        if self.vol_forecast:
+            h = max(self.horizons)
+            L.append("")
+            L.append(f"[F] Prognoza vol realizat (equal-weight cauzal, IC@h={h}, "
+                     f"parcimonie):")
+            L.append("  " + "set indicatori".ljust(22) + "IC".rjust(8) +
+                     "IC_holdout".rjust(12) + "n".rjust(9))
+            for label in self.vol_forecast:
+                v = self.vol_forecast[label]
+                L.append("  " + label.ljust(22) +
+                         f"{v['ic']:+.3f}".rjust(8) +
+                         f"{v['ic_holdout']:+.3f}".rjust(12) +
+                         f"{v['n']}".rjust(9))
         L.append("")
         L.append(DISCLAIMER)
         return "\n".join(L)
@@ -140,5 +155,18 @@ def run_validation(symbols, data_dir, indicators, horizon_tf="1day",
     ens_mr = {k: float(np.mean([m[k] for m in gated]))
               for k in ("net_return", "sharpe", "p_value", "n_days")}
 
+    # [F] Prognoza vol realizat (doar cand tinta e volatilitatea): compara setul
+    # complet cu echipa ortogonala (3) si cu un singur estimator -> parcimonie.
+    vol_fc = {}
+    if target == "vol":
+        h_vol = max(horizons)
+        sets = {f"ALL ({len(names)})": names,
+                "TEAM (3 ortogonal)": list(VOL_TEAM),
+                "SINGLE realized_var": ["realized_var"]}
+        for label, ns in sets.items():
+            vol_fc[label] = pooled_vol_forecast(panel.features, panel.close,
+                                                ns, horizon=h_vol)
+
     return ValidationReport(pooled, families, marginal, conditional, ens,
-                            tuple(horizons), target=target, ensemble_regime=ens_mr)
+                            tuple(horizons), target=target, ensemble_regime=ens_mr,
+                            vol_forecast=vol_fc)
