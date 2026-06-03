@@ -38,32 +38,27 @@ export ALPHAVANTAGE_API_KEY=cheia_ta_aici
 
 ---
 
-## 4. Adu datele reale (backfill eșalonat — free tier 25/zi)
+## 4. Adu datele reale (backfill DAILY — free tier, 1 apel/simbol)
 
-5 simboluri × 12 luni = 60 apeluri, dar ai **25/zi**. Deci împarți pe zile.
-Scriptul se oprește singur când lovești limita și **păstrează** ce-a adus.
+> **Important:** Alpha Vantage a mutat istoricul **intraday** (`--months`, 15m) la
+> endpoint **premium**. Pe cheie free pică imediat. Folosim în schimb istoricul
+> **daily**, care e gratis, adânc (20+ ani) și exact granularitatea cerută de motorul
+> de validare (orizonturi 1/5/21 zile).
 
-**Ziua 1** (24 apeluri):
+5 simboluri × 1 apel = **5 apeluri**, lejer sub 25/zi. Toate într-o comandă:
 ```bash
-python backfill_cli.py --symbols NVDA,AAPL --months 12
+python backfill_cli.py --daily --symbols NVDA,AAPL,MSFT,AMD,TSLA
 ```
-**Ziua 2** (24 apeluri):
-```bash
-python backfill_cli.py --symbols MSFT,AMD --months 12
-```
-**Ziua 3** (12 apeluri):
-```bash
-python backfill_cli.py --symbols TSLA --months 12
-```
+Scriptul se oprește singur dacă lovești limita și **păstrează** ce-a adus (reia mâine).
 
-Datele ajung în `data/intraday/<SIMBOL>_15m.csv`. Verifici:
+Datele ajung în `data/intraday/<SIMBOL>_15m.csv` (nume păstrat; conțin bare daily —
+pipeline-ul le resamplează la „1day" idempotent). Verifici:
 ```bash
 ls -la data/intraday/
 ```
 
-> Vrei mai repede? Cu mai puține luni: `--months 6` → 6 apeluri/simbol → toate 5
-> simbolurile într-o zi (30 apeluri… încă peste 25, deci 4 simboluri/zi la 6 luni).
-> Pentru validare, **6 luni de daily ≈ 126 bare** — suficient pentru un prim test.
+> Graficul intraday pe 15m (pasul 6) e separat: cu cheia free poți aduce doar
+> ultimele ~30 zile de 15m (sub-proiect ulterior). Validarea nu depinde de el.
 
 ---
 

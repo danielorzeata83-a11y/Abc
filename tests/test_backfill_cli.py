@@ -41,3 +41,35 @@ def test_backfill_stops_gracefully_on_throttle(tmp_path):
     assert n == 1                                   # un apel reusit inainte de throttle
     assert read_bars(str(tmp_path), "AAA") is not None   # datele aduse raman
     assert read_bars(str(tmp_path), "BBB") is None       # nu s-a ajuns la BBB
+
+
+class _FakeDailyProvider:
+    def __init__(self, fail_after=None):
+        self.calls = []
+        self.fail_after = fail_after
+
+    def fetch(self, symbol):
+        if self.fail_after is not None and len(self.calls) >= self.fail_after:
+            raise DataUnavailable("throttled (limita zilnica)")
+        self.calls.append(symbol)
+        idx = pd.date_range("2024-01-02", periods=300, freq="B")   # ani de daily
+        c = 100 + np.arange(300, dtype=float)
+        return Bars(idx.to_numpy(), c, c + 1, c - 1, c, np.full(300, 1.0))
+
+
+def test_backfill_daily_one_call_per_symbol(tmp_path):
+    prov = _FakeDailyProvider()
+    n = backfill_cli.run_backfill_daily(["AAA", "BBB"], str(tmp_path), prov,
+                                        sleeper=lambda s: None)
+    assert n == 2                                   # un apel/simbol
+    assert len(read_bars(str(tmp_path), "AAA")) == 300
+    assert len(read_bars(str(tmp_path), "BBB")) == 300
+
+
+def test_backfill_daily_stops_on_throttle(tmp_path):
+    prov = _FakeDailyProvider(fail_after=1)
+    n = backfill_cli.run_backfill_daily(["AAA", "BBB"], str(tmp_path), prov,
+                                        sleeper=lambda s: None)
+    assert n == 1
+    assert read_bars(str(tmp_path), "AAA") is not None
+    assert read_bars(str(tmp_path), "BBB") is None
