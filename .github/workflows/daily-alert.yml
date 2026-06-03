@@ -1,0 +1,42 @@
+name: Daily Telegram alert
+
+# Runs the value/quality screener + CAPE thermometer once a day and pushes the
+# CHEAP+QUALITY candidates to Telegram. GitHub hosts the runner, so nothing on
+# your machine has to stay on. Research artifact -- NOT investment advice.
+
+on:
+  schedule:
+    # 06:00 UTC on weekdays (~09:00 Romania in summer, 08:00 in winter).
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch: {}   # lets you run it manually from the Actions tab
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pandas numpy yfinance
+
+      - name: Seed data (always works) then refresh live
+        run: |
+          mkdir -p data
+          cp ci_data/sp500_monthly.csv   data/sp500_monthly.csv
+          cp ci_data/sp500_financials.csv data/sp500_financials.csv
+
+      - name: Refresh fundamentals with today's prices (best effort)
+        continue-on-error: true          # flaky yfinance must not block the alert
+        run: python update_data.py --fundamentals --from-existing
+
+      - name: Send Telegram alert
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python telegram_alert.py
