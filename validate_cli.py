@@ -12,7 +12,11 @@ from markov.validation import tier1, tier2
 from markov.validation.report import run_validation
 from markov.intraday.service import Config
 
-_TIERS = {"tier1": tier1.INDICATORS, "tier2": tier2.INDICATORS}
+_TIERS = {
+    "tier1": tier1.INDICATORS,
+    "tier2": tier2.INDICATORS,
+    "all": {**tier1.INDICATORS, **tier2.INDICATORS},
+}
 
 
 def main(argv=None):

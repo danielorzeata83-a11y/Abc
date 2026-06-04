@@ -43,6 +43,15 @@ def test_cli_runs_tier2(tmp_path, capsys):
     assert "ts_momentum" in out and "turn_of_month" in out
 
 
+def test_cli_runs_all_tiers(tmp_path, capsys):
+    d = str(tmp_path)
+    _seed(d, "AAA"); _seed(d, "BBB")
+    validate_cli.main(["--symbols", "AAA,BBB", "--data-dir", d,
+                       "--horizons", "1,5", "--indicators", "all"])
+    out = capsys.readouterr().out
+    assert "ts_momentum" in out and "realized_var" in out   # tier2 + tier1 impreuna
+
+
 def test_cli_writes_csv_with_out(tmp_path):
     d = str(tmp_path)
     _seed(d, "AAA"); _seed(d, "BBB")
