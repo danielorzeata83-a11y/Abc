@@ -23,6 +23,7 @@ class ValidationReport:
     horizons: tuple
     target: str = "return"
     ensemble_regime: dict = field(default_factory=dict)  # ansamblu gated pe meanrev
+    ensemble_ic: dict = field(default_factory=dict)      # ansamblu sign-aware (ponderi ∝ IC)
     vol_forecast: dict = field(default_factory=dict)     # [F] doar pentru target='vol'
 
     def render_text(self):
@@ -69,6 +70,11 @@ class ValidationReport:
             L.append(f"  gated meanrev : net_return={g['net_return']:+.3f}"
                      f"  sharpe={g['sharpe']:+.2f}  p_value={g['p_value']:.3f}"
                      f"  n_days={g['n_days']:.0f}")
+        if self.ensemble_ic:
+            w = self.ensemble_ic
+            L.append(f"  sign-aware IC : net_return={w['net_return']:+.3f}"
+                     f"  sharpe={w['sharpe']:+.2f}  p_value={w['p_value']:.3f}"
+                     f"  n_days={w['n_days']:.0f}")
         if self.vol_forecast:
             h = max(self.horizons)
             L.append("")
@@ -144,16 +150,17 @@ def run_validation(symbols, data_dir, indicators, horizon_tf="1day",
             conditional[name][h] = {r: ic.pooled_ic(vs)["mean"]
                                     for r, vs in accum.items()}
 
-    uncond, gated = [], []
+    uncond, gated, signaware = [], [], []
     for s in symbols:
         uncond.append(ensemble.evaluate_ensemble(panel.features[s], panel.close[s]))
         gated.append(ensemble.evaluate_ensemble(
             panel.features[s], panel.close[s],
             regime_labels=labels_by_sym[s], active_regime="meanrev"))
-    ens = {k: float(np.mean([m[k] for m in uncond]))
-           for k in ("net_return", "sharpe", "p_value", "n_days")}
-    ens_mr = {k: float(np.mean([m[k] for m in gated]))
-              for k in ("net_return", "sharpe", "p_value", "n_days")}
+        signaware.append(ensemble.evaluate_ensemble(
+            panel.features[s], panel.close[s], weighting="ic"))
+    _avg = lambda ms: {k: float(np.mean([m[k] for m in ms]))
+                       for k in ("net_return", "sharpe", "p_value", "n_days")}
+    ens, ens_mr, ens_ic = _avg(uncond), _avg(gated), _avg(signaware)
 
     # [F] Prognoza vol realizat (doar cand tinta e volatilitatea): compara setul
     # complet cu echipa ortogonala (3) si cu un singur estimator -> parcimonie.
@@ -169,4 +176,4 @@ def run_validation(symbols, data_dir, indicators, horizon_tf="1day",
 
     return ValidationReport(pooled, families, marginal, conditional, ens,
                             tuple(horizons), target=target, ensemble_regime=ens_mr,
-                            vol_forecast=vol_fc)
+                            ensemble_ic=ens_ic, vol_forecast=vol_fc)

@@ -55,8 +55,60 @@ def equal_weight_signal(features, causal=True):
         return np.nanmean(zs, axis=1)
 
 
+def _causal_ic_weights(z_cols, ret1):
+    """w[t, i] = corelatia Pearson dintre z_i si randamentul forward 1 zi, calculata
+    DOAR din perechi cunoscute strict inainte de t (fara look-ahead).
+
+    ret1[s] = randamentul t->t+1 e cunoscut abia la s+1, deci la momentul t folosim
+    perechile (z_i[s], ret1[s]) cu s <= t-1. Sume rulante O(n*k); semnul corelatiei
+    e pastrat -> un factor invers-predictiv primeste pondere negativa (se intoarce)."""
+    z_cols = np.asarray(z_cols, dtype=float)
+    n, k = z_cols.shape
+    W = np.zeros((n, k))
+    cnt = np.zeros(k); Sx = np.zeros(k); Sy = np.zeros(k)
+    Sxx = np.zeros(k); Syy = np.zeros(k); Sxy = np.zeros(k)
+    for t in range(n):
+        # sumele contin acum perechile s = 0..t-1 (perechea s=t se adauga dupa)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            cov = Sxy - Sx * Sy / cnt
+            vx = Sxx - Sx * Sx / cnt
+            vy = Syy - Sy * Sy / cnt
+            denom = np.sqrt(vx * vy)
+            w = np.where((cnt >= 3) & (denom > 0), cov / denom, 0.0)
+        W[t] = np.where(np.isfinite(w), w, 0.0)
+        if t < len(ret1):                      # incorporeaza perechea s=t pentru viitor
+            xi = z_cols[t]
+            r = ret1[t]
+            fin = np.isfinite(xi) & np.isfinite(r)
+            xi = np.where(fin, xi, 0.0)
+            rr = np.where(fin, r, 0.0)
+            cnt += fin; Sx += xi; Sy += rr
+            Sxx += xi * xi; Syy += rr * rr; Sxy += xi * rr
+    return W
+
+
+def sign_aware_signal(features, prices):
+    """Semnal combinat cu ponderi ∝ IC-ul cauzal (semn inclus) al fiecarui indicator.
+
+    signal[t] = sum_i w_i[t]*z_i[t] / sum_i |w_i[t]|, unde w_i[t] e corelatia
+    cauzala z_i<->randament next-day (vezi _causal_ic_weights). Factorii cu IC
+    negativ sunt intorsi automat; cei fara semnal primesc pondere ~0. Fara look-ahead.
+    """
+    z_cols = np.column_stack([zscore_causal(np.asarray(v, dtype=float))
+                              for v in features.values()])
+    prices = np.asarray(prices, dtype=float)
+    ret1 = prices[1:] / prices[:-1] - 1.0
+    W = _causal_ic_weights(z_cols, ret1)
+    zf = np.where(np.isfinite(z_cols), z_cols, 0.0)
+    fin = np.isfinite(z_cols).astype(float)
+    num = np.sum(W * zf, axis=1)
+    den = np.sum(np.abs(W) * fin, axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(den > 0, num / den, np.nan)
+
+
 def evaluate_ensemble(features, prices, warmup=20, cost=0.0, n_perm=1000, seed=0,
-                      regime_labels=None, active_regime=None):
+                      regime_labels=None, active_regime=None, weighting="equal"):
     """Construieste semnalul cauzal -> strategie walk-forward -> metrici OOS.
 
     Pozitia in ziua t = tanh(semnal_equal_weight_cauzal[t]), folosind doar trecutul.
@@ -66,7 +118,8 @@ def evaluate_ensemble(features, prices, warmup=20, cost=0.0, n_perm=1000, seed=0
     si n_days. NU este consiliere de investitii.
     """
     prices = np.asarray(prices, dtype=float)
-    signal = equal_weight_signal(features, causal=True)
+    signal = (sign_aware_signal(features, prices) if weighting == "ic"
+              else equal_weight_signal(features, causal=True))
     position = np.tanh(signal)
     position = np.where(np.isfinite(position), position, 0.0)
     if regime_labels is not None and active_regime is not None:
