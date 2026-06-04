@@ -10,7 +10,8 @@ randamente NETE long-short. NU este consiliere de investitii.
 
 import argparse
 
-from markov.validation.tier2b import load_universe, render_xs, run_xs_validation
+from markov.validation.tier2b import (blend_oos, factor_streams, load_universe,
+                                       render_blend, render_xs, run_xs_validation)
 
 
 def main(argv=None):
@@ -21,11 +22,17 @@ def main(argv=None):
                     help="fractia in-sample (restul = OOS)")
     ap.add_argument("--n-perm", type=int, default=2000,
                     help="permutari pentru p-value (sign-flip)")
+    ap.add_argument("--no-blend", action="store_true",
+                    help="sari peste blend-ul sign-aware")
     args = ap.parse_args(argv)
 
     rows = run_xs_validation(args.universe, split_frac=args.split, n_perm=args.n_perm)
-    _P, _V, _d = load_universe(args.universe)
-    print(render_xs(rows, n_assets=_P.shape[1]))
+    P, V, _d = load_universe(args.universe)
+    print(render_xs(rows, n_assets=P.shape[1]))
+    if not args.no_blend:
+        blend = blend_oos(factor_streams(P, V), split_frac=args.split,
+                          n_perm=args.n_perm)
+        print("\n" + render_blend(blend))
 
 
 if __name__ == "__main__":

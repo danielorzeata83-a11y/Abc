@@ -88,6 +88,63 @@ def run_xs_validation(csv_path, factors=None, split_frac=0.6, n_perm=2000, seed=
     return out
 
 
+def factor_streams(P, V, factors=None):
+    """{nume: stream de randamente} pentru fiecare factor pe panel."""
+    factors = factors or FACTORS
+    return {name: np.asarray(fn(P, V), dtype=float) for name, fn in factors.items()}
+
+
+def align_streams(streams):
+    """Streamurile xs_*_returns se termina toate in aceeasi zi (T-1) dar incep dupa
+    warmup-uri diferite -> sunt RIGHT-aligned. Le taie la coada comuna cea mai scurta.
+    Intoarce (names, M) cu M de forma (L, k)."""
+    names = list(streams)
+    L = min(len(streams[n]) for n in names)
+    M = np.column_stack([np.asarray(streams[n], dtype=float)[-L:] for n in names])
+    return names, M
+
+
+def blend_oos(streams, split_frac=0.6, n_perm=2000, seed=0):
+    """Blend sign-aware (conviction) al factorilor cross-sectionali, FARA leak:
+    ponderile = Sharpe-ul IN-SAMPLE (partea pozitiva, normalizata) ales pe primele
+    `split_frac`; factorii care pierd in-sample primesc zero (nu se short-eaza un
+    portofoliu dominat de costuri). Evaluat pe segmentul OOS ramas.
+
+    Intoarce ponderi, Sharpe in-sample/OOS si p-value sign-flip pe OOS."""
+    names, M = align_streams(streams)
+    L, k = M.shape[0], int(M.shape[0] * split_frac)
+    ins, oos = M[:k], M[k:]
+    sh_in = np.array([sharpe(ins[:, i]) for i in range(M.shape[1])])
+    w = np.where(np.isfinite(sh_in) & (sh_in > 0), sh_in, 0.0)
+    total = w.sum()
+    if total > 0:
+        w = w / total
+        blended = oos @ w
+    else:
+        w = np.zeros_like(w)
+        blended = np.zeros(oos.shape[0])
+    return {
+        "weights": dict(zip(names, w)),
+        "sharpe_in": dict(zip(names, sh_in)),
+        "sharpe_oos": sharpe(blended),
+        "p_value_oos": signflip_pvalue(blended, n_perm=n_perm, seed=seed),
+        "n_days_oos": len(blended),
+    }
+
+
+def render_blend(blend):
+    """Raport text al blend-ului sign-aware. Cu disclaimer."""
+    L = [DISCLAIMER, "",
+         "=== Blend sign-aware (ponderi ∝ Sharpe in-sample, conviction) ===", "",
+         f"  {'factor'.ljust(10)} {'w':>7} {'Sharpe_in':>10}"]
+    for name, w in blend["weights"].items():
+        L.append(f"  {name.ljust(10)} {w:>7.2f} {blend['sharpe_in'][name]:>+10.2f}")
+    L += ["", f"  BLEND OOS  Sharpe={blend['sharpe_oos']:+.2f}  "
+              f"p={blend['p_value_oos']:.3f}  n_zile={blend['n_days_oos']}",
+          "", DISCLAIMER]
+    return "\n".join(L)
+
+
 def render_xs(rows, n_assets=None):
     """Raport text: Sharpe full/OOS + p-value OOS per factor. Cu disclaimer."""
     L = [DISCLAIMER, "",

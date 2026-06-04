@@ -71,6 +71,29 @@ Rezultat pe univers (501 nume, walk-forward):
 nesemnificativ (p=0.46). Defectul metodologic e rezolvat; edge real tot nu există
 la p<0.05 pe acești factori time-series. Motorul rămâne onest.
 
+## Blend sign-aware al factorilor cross-secționali (conviction)
+
+`python validate_xs_cli.py` — secțiunea blend. Ponderi ∝ Sharpe **in-sample** (partea
+pozitivă, normalizată), evaluat OOS. Factorii care pierd in-sample primesc zero — NU
+se short-ează un portofoliu dominat de costuri (sign-flip ar plăti același turnover).
+
+| factor   | w | Sharpe_in |
+|----------|--:|----------:|
+| amihud   | 0.65 | +1.19 |
+| momentum | 0.19 | +0.35 |
+| resmom   | 0.16 | +0.29 |
+| reversal | 0.00 | −2.43 (zero-uit) |
+| low_vol  | 0.00 | −0.23 (zero-uit) |
+
+**BLEND OOS: Sharpe +0.56, p=0.236, 444 zile.**
+
+- Combinatorul identifică singur amihud ca dominant (0.65) și zero-uiește pierzătorii —
+  fără leak. Metoda e corectă.
+- Blend-ul (+0.56) e sub amihud singur (+0.91), dar pe fereastră mai scurtă (coada
+  comună 444 zile vs 495) și diluat de resmom (~0 OOS).
+- p=0.236 → **promițător, nu dovedit**. Limitarea reală e istoricul scurt: datasetul
+  Kaggle e 2013–18, OOS ≈ 1.8 ani — prea puțin ca un Sharpe 0.56 să fie semnificativ.
+
 ## Verdict
 
 Consecvent cu `REPORT.md`: majoritatea factorilor nu produc edge tradabil curat.
