@@ -57,6 +57,16 @@ def test_parse_stooq_empty_raises():
         parse_stooq_csv("No data\n")
 
 
+def test_parse_stooq_rate_limit_message():
+    # raspuns non-CSV de rate-limit -> mesaj clar, nu "CSV invalid"
+    bodies = ("Exceeded the daily hits limit\n", "<html>blocked</html>",
+              "Message\nl2\nl3\nl4\nl5\nl6a,l6b\n")     # tokenizing fail (ca eroarea reala)
+    for body in bodies:
+        with pytest.raises(DataUnavailable) as ei:
+            parse_stooq_csv(body)
+        assert "yahoo" in str(ei.value).lower() or "limit" in str(ei.value).lower()
+
+
 def test_stooq_fetch_builds_us_url_and_returns_bars():
     opener, captured = _text_opener(_STOOQ_CSV)
     b = StooqDailyProvider(opener=opener).fetch("NVDA")

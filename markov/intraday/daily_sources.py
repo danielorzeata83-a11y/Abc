@@ -47,10 +47,15 @@ def _get(opener, url, decode_json):
 
 def parse_stooq_csv(text):
     """CSV Stooq (Date,Open,High,Low,Close,Volume; ascendent) -> Bars."""
+    head = text.lstrip()[:40].upper()
+    if head.startswith(("<", "EXCEEDED", "PRZEKROCZONY")) or "LIMIT" in head:
+        raise DataUnavailable("Stooq rate-limit / IP blocat (raspuns non-CSV) -- "
+                              "reia mai tarziu sau foloseste --source yahoo")
     try:
         df = pd.read_csv(io.StringIO(text))
-    except Exception as e:                                # pragma: no cover
-        raise DataUnavailable(f"CSV Stooq invalid: {e}")
+    except Exception as e:
+        raise DataUnavailable("Stooq: raspuns non-CSV (probabil rate-limit/IP "
+                              f"blocat) -- incearca --source yahoo. Detaliu: {e}")
     need = {"Date", "Open", "High", "Low", "Close", "Volume"}
     if df.empty or not need <= set(df.columns):
         raise DataUnavailable("Stooq: fara date pentru simbol")
