@@ -50,10 +50,26 @@ plus illichiditate și residual-momentum). Întrebarea: au edge real, testați c
   fără să le alinieze la semnul IC, deci componenta cu IC negativ trage în jos. IC-ul
   e gross (fără costuri); reversal-ul, ca strategie tradabilă, depinde de turnover.
 
-## Defect de motor identificat (next)
+## Defect de motor identificat ȘI reparat
 
-Ansamblul equal-weight nu aliniază semnele la IC. Un combinator **sign-aware**
-(ponderi ∝ semnul/mărimea IC out-of-sample) ar reflecta corect informația factorilor.
+Ansamblul equal-weight nu alinia semnele la IC → componenta cu IC negativ (momentum)
+trăgea în jos componenta cu IC pozitiv (reversal). Adăugat `ensemble.sign_aware_signal`:
+ponderează fiecare indicator cu corelația lui **cauzală** față de randamentul next-day
+(perechi cunoscute strict înainte de t → fără look-ahead); factorii invers-predictivi
+sunt întorși automat. `evaluate_ensemble(..., weighting="ic")`; raportul afișează rândul
+`sign-aware IC` lângă equal-weight și gated.
+
+Rezultat pe univers (501 nume, walk-forward):
+
+| ansamblu | Sharpe | p |
+|----------|-------:|---:|
+| equal-weight neconditionat | −0.31 | 0.72 |
+| gated meanrev | −0.14 | 0.61 |
+| **sign-aware IC** | **+0.05** | 0.46 |
+
+→ Fix-ul corectează semnul (−0.31 → +0.05), dar **nu fabrică alfa**: rămâne
+nesemnificativ (p=0.46). Defectul metodologic e rezolvat; edge real tot nu există
+la p<0.05 pe acești factori time-series. Motorul rămâne onest.
 
 ## Verdict
 
