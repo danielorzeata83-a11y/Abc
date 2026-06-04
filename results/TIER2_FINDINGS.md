@@ -34,6 +34,11 @@ plus illichiditate și residual-momentum). Întrebarea: au edge real, testați c
 → **amihud și momentum** sunt singurii cu edge OOS pozitiv; niciunul la p<0.05
 („promițător, nu dovedit"). Testat corect, edge-ul apare — vs TIER 2 unde era zgomot.
 
+> **Atenție la comparabilitate:** acest tabel per-factor folosește lungimea proprie a
+> fiecărui stream (warmup diferit → `n_zile` diferă pe linii). Tabelul **blend** de mai
+> jos taie la coada comună cea mai scurtă, deci Sharpe-urile lui NU sunt pe aceeași
+> fereastră cu cele de aici. Nu le citi ca o singură coloană continuă.
+
 ## #3 — factori time-series pooled pe tot universul (501 nume)
 
 `python validate_universe_cli.py --indicators tier2`
@@ -93,6 +98,16 @@ se short-ează un portofoliu dominat de costuri (sign-flip ar plăti același tu
   comună 444 zile vs 495) și diluat de resmom (~0 OOS).
 - p=0.236 → **promițător, nu dovedit**. Limitarea reală e istoricul scurt: datasetul
   Kaggle e 2013–18, OOS ≈ 1.8 ani — prea puțin ca un Sharpe 0.56 să fie semnificativ.
+
+## Note de onestitate (caveats)
+
+- **`vol_managed` și `low_vol` sunt cvasi-identice** — ambele sunt ±deviația standard a
+  randamentelor (ferestre diferite: 20 vs 60). Sub IC pe ranguri sunt aproape redundante;
+  tabelele le listează separat doar pentru transparență, nu ca semnale independente.
+- **`turn_of_month`** e în `tier2.INDICATORS` și trece prin motor, dar nu apare în
+  tabelele de rezultate (IC ~0 pe orizonturi) — inclus pentru completitudine, fără edge.
+- Ferestrele tabelelor TIER 2b (per-factor vs blend) diferă — vezi avertismentul de la
+  secțiunea TIER 2b.
 
 ## Verdict
 

@@ -28,13 +28,14 @@ def main(argv=None, sender=send_message):
     ap.add_argument("--chat-id", default=os.environ.get("TELEGRAM_CHAT_ID"))
     ap.add_argument("--dry-run", action="store_true",
                     help="tipareste mesajul fara sa-l trimita")
+    ap.add_argument("--asof", help="data raportului (YYYY-MM-DD); implicit azi")
     args = ap.parse_args(argv)
 
     cfg = Config.from_env()
     symbols = ([s.strip().upper() for s in args.symbols.split(",") if s.strip()]
                if args.symbols else list(cfg.watchlist))
     data_dir = args.data_dir or cfg.data_dir
-    asof = pd.Timestamp.now().strftime("%Y-%m-%d")
+    asof = args.asof or pd.Timestamp.now().strftime("%Y-%m-%d")
 
     try:
         msg = build_from_cache(symbols, data_dir, asof, bins=args.bins, lag=args.lag)

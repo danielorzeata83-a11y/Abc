@@ -18,11 +18,8 @@ import pandas as pd
 
 from markov.intraday.bars import Bars
 from markov.intraday.cache import write_bars
-from markov.validation import tier1, tier2
+from markov.validation import TIERS
 from markov.validation.report import run_validation
-
-_TIERS = {"tier1": tier1.INDICATORS, "tier2": tier2.INDICATORS,
-          "all": {**tier1.INDICATORS, **tier2.INDICATORS}}
 
 
 def cache_from_long_csv(csv_path, cache_dir, min_obs=200):
@@ -49,7 +46,7 @@ def cache_from_long_csv(csv_path, cache_dir, min_obs=200):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Validare time-series pe univers larg.")
     ap.add_argument("--universe", default="data/sp500.csv")
-    ap.add_argument("--indicators", default="tier2", choices=list(_TIERS))
+    ap.add_argument("--indicators", default="tier2", choices=list(TIERS))
     ap.add_argument("--horizons", default="1,5,21")
     ap.add_argument("--target", default="return", choices=["return", "vol"])
     ap.add_argument("--min-obs", type=int, default=200)
@@ -60,7 +57,7 @@ def main(argv=None):
         symbols = cache_from_long_csv(args.universe, d, min_obs=args.min_obs)
         if not symbols:
             raise SystemExit(f"Niciun simbol cu >= {args.min_obs} bare in {args.universe}")
-        rep = run_validation(symbols, d, _TIERS[args.indicators],
+        rep = run_validation(symbols, d, TIERS[args.indicators],
                              horizons=horizons, target=args.target)
         print(f"(univers: {len(symbols)} simboluri)\n")
         print(rep.render_text())
