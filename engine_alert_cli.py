@@ -12,6 +12,7 @@ import os
 
 import pandas as pd
 
+from markov.data_providers import DataUnavailable
 from markov.intraday.service import Config
 from markov.telegram import send_message
 from markov.validation.alert import build_from_cache
@@ -35,7 +36,13 @@ def main(argv=None, sender=send_message):
     data_dir = args.data_dir or cfg.data_dir
     asof = pd.Timestamp.now().strftime("%Y-%m-%d")
 
-    msg = build_from_cache(symbols, data_dir, asof, bins=args.bins, lag=args.lag)
+    try:
+        msg = build_from_cache(symbols, data_dir, asof, bins=args.bins, lag=args.lag)
+    except DataUnavailable as e:
+        raise SystemExit(
+            f"Cache gol pentru {data_dir} ({e}). Populeaza-l intai (fara cheie API):\n"
+            f"  python backfill_cli.py --source stooq --daily --symbols "
+            f"{','.join(symbols)} --data-dir {data_dir}")
 
     if args.dry_run:
         print(msg)
