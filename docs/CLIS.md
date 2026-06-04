@@ -56,13 +56,15 @@ Prognoză de volatilitate per simbol (z realized_var) + lead-lag, cu freshness �
 disclaimer. `--dry-run` previzualizează; fără el trimite (cere `TELEGRAM_TOKEN` +
 `TELEGRAM_CHAT_ID` din mediu sau `--token/--chat-id`). `--asof` pentru dată fixă.
 
-### `tradingview_cli.py` — trading view HTML self-contained
+### `tradingview_cli.py` — trading view HTML self-contained (OHLCV real)
 ```
-python tradingview_cli.py --symbols NVDA,AAPL,MSFT,AMD,TSLA --data-dir data/intraday --out results/tv.html
+python tradingview_cli.py --symbols NVDA,AAPL,MSFT,AMD,TSLA --data-dir data/intraday
+python tradingview_cli.py --universe data/sp500.csv --symbols AAPL,MSFT,JPM,XOM
 ```
-Pagină HTML offline (zero deps externe): lumânări OHLC + volum + sub-panou cu
-semnalul de volatilitate (z realized_var), taburi de simboluri, crosshair la hover.
-`--max-bars` câte bare recente, `--asof` dată fixă.
+Pagină HTML offline (zero deps externe): lumânări OHLC reale + volum + MA50 +
+markeri BUY/SELL (crossover) + sub-panou z realized_var + strip lead-lag, cu
+zoom (rotiță) / pan (drag). Două surse de date REALE: `--data-dir` (cache daily
+backfilled) sau `--universe` (CSV long OHLCV). `--max-bars`, `--asof`.
 
 ## Rezultate
 

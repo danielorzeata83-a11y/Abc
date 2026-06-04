@@ -37,17 +37,32 @@ def test_panel_has_ma50_and_crossover_signals():
     assert all(0 <= s["i"] < 200 for s in p["signals"])
 
 
-def test_lead_lag_ranking_orders_by_net(tmp_path):
-    d = str(tmp_path)
-    write_bars(d, "AAA", _bars(seed=1))
-    write_bars(d, "BBB", _bars(seed=2))
-    ll = tradingview.lead_lag_ranking(["AAA", "BBB"], d)
+def test_lead_lag_from_panels_orders_by_net():
+    pa = tradingview.panel_for_symbol("AAA", _bars(seed=1))
+    pb = tradingview.panel_for_symbol("BBB", _bars(seed=2))
+    ll = tradingview.lead_lag_from_panels([pa, pb])
     assert {r["symbol"] for r in ll} == {"AAA", "BBB"}
     assert ll[0]["net"] >= ll[-1]["net"]                  # sortat descrescator
 
 
-def test_lead_lag_ranking_empty_on_missing(tmp_path):
-    assert tradingview.lead_lag_ranking(["NOPE"], str(tmp_path)) == []
+def test_lead_lag_from_panels_empty_single():
+    assert tradingview.lead_lag_from_panels(
+        [tradingview.panel_for_symbol("AAA", _bars())]) == []
+
+
+def test_panels_from_long_csv_real_ohlcv(tmp_path):
+    rng = np.random.default_rng(11)
+    rows = []
+    for s in ("AAA", "BBB"):
+        for i, d in enumerate(pd.bdate_range("2015-01-02", periods=120)):
+            c = 100 + i * 0.1 + rng.normal()
+            rows.append((d.strftime("%Y-%m-%d"), c, c + 1, c - 1, c, 1e6 + i, s))
+    csv = tmp_path / "uni.csv"
+    pd.DataFrame(rows, columns=["date", "open", "high", "low", "close",
+                                "volume", "Name"]).to_csv(csv, index=False)
+    panels = tradingview.panels_from_long_csv(str(csv), symbols=["AAA"])
+    assert len(panels) == 1 and panels[0]["symbol"] == "AAA"
+    assert len(panels[0]["c"]) == 120 and panels[0]["c"][0] is not None
 
 
 def test_build_html_is_self_contained():

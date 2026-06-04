@@ -10,10 +10,10 @@ import json
 import numpy as np
 import pandas as pd
 
-from markov.intraday.bars import resample
+from markov.intraday.bars import Bars, resample
 from markov.intraday.cache import read_bars
 from markov.validation import tier1
-from markov.validation.crossasset import aligned_returns, lead_lag_matrix
+from markov.validation.crossasset import lead_lag_matrix
 from markov.validation.ensemble import zscore_causal
 
 DISCLAIMER = "NU este consiliere de investitii. Artefact de cercetare."
@@ -63,7 +63,8 @@ def panel_for_symbol(symbol, bars):
 
 
 def collect_panels(symbols, data_dir, horizon_tf="1day", max_bars=750):
-    """Citeste cache-ul -> lista de panouri (ultimele max_bars bare). Sare lipsa."""
+    """Citeste cache-ul DAILY (date reale backfilled) -> lista de panouri (ultimele
+    max_bars bare). Sare simbolurile lipsa din cache."""
     panels = []
     for s in symbols:
         b = read_bars(data_dir, s)
@@ -78,10 +79,40 @@ def collect_panels(symbols, data_dir, horizon_tf="1day", max_bars=750):
     return panels
 
 
-def lead_lag_ranking(symbols, data_dir):
-    """[{symbol, net}] sortat descrescator (lider sus). [] daca nu se poate calcula."""
+def panels_from_long_csv(csv_path, symbols=None, max_bars=750):
+    """Construieste panouri din OHLCV REAL dintr-un CSV long (date, open, high, low,
+    close, volume, Name) -- ex. data/sp500.csv. symbols=None -> toate numele."""
+    raw = pd.read_csv(csv_path)
+    names = symbols or sorted(raw["Name"].astype(str).unique())
+    panels = []
+    for s in names:
+        g = raw[raw["Name"].astype(str) == str(s)].sort_values("date")
+        if g.empty:
+            continue
+        if max_bars and len(g) > max_bars:
+            g = g.iloc[-max_bars:]
+        ts = pd.to_datetime(g["date"]).to_numpy()
+        bars = Bars(ts, g["open"].to_numpy(dtype=float), g["high"].to_numpy(dtype=float),
+                    g["low"].to_numpy(dtype=float), g["close"].to_numpy(dtype=float),
+                    g["volume"].to_numpy(dtype=float))
+        panels.append(panel_for_symbol(str(s), bars))
+    return panels
+
+
+def lead_lag_from_panels(panels):
+    """[{symbol, net}] din seriile de close ale panourilor (aliniate pe datele comune).
+    Agnostic de sursa (cache sau CSV). [] daca <2 simboluri sau prea putine date comune."""
+    if len(panels) < 2:
+        return []
+    closes = {}
+    for p in panels:
+        c = pd.Series([np.nan if x is None else x for x in p["c"]],
+                      index=pd.DatetimeIndex(p["dates"]))
+        closes[p["symbol"]] = c
+    rets = pd.DataFrame(closes).sort_index().pct_change().dropna(how="any")
+    if len(rets) < 30:
+        return []
     try:
-        rets = aligned_returns(list(symbols), data_dir)
         syms, _M, net = lead_lag_matrix(rets)
     except Exception:
         return []
