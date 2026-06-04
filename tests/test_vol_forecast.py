@@ -43,3 +43,15 @@ def test_pooled_averages_over_symbols():
     pooled = pooled_vol_forecast(feats, close, ["oracle"], horizon=5)
     assert pooled["ic"] > 0.8
     assert pooled["n"] > 200                      # suma pe ambele simboluri
+
+
+def test_orientation_recovers_opposite_sign_member():
+    """Doi indicatori, unul corelat POZITIV cu vol, altul NEGATIV. Media naiva ii
+    anuleaza; orientarea pe semn ii aliniaza -> IC OOS mult mai mare."""
+    close = _vol_clustered_close(seed=5)
+    tgt = forward_realized_vol(close, (5,))[5]
+    feats = {"pos": tgt, "neg": -tgt}             # semne opuse fata de tinta
+    naive = evaluate_vol_forecast(feats, close, horizon=5, orient=False)
+    orient = evaluate_vol_forecast(feats, close, horizon=5, orient=True)
+    assert not np.isfinite(naive["ic"]) or abs(naive["ic"]) < 0.1   # se anuleaza
+    assert orient["ic_holdout"] > 0.8             # orientarea recupereaza semnalul

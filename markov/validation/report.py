@@ -72,15 +72,15 @@ class ValidationReport:
         if self.vol_forecast:
             h = max(self.horizons)
             L.append("")
-            L.append(f"[F] Prognoza vol realizat (equal-weight cauzal, IC@h={h}, "
-                     f"parcimonie):")
+            L.append(f"[F] Prognoza vol realizat (cauzal, IC@h={h}, parcimonie):")
             L.append("  " + "set indicatori".ljust(22) + "IC".rjust(8) +
-                     "IC_holdout".rjust(12) + "n".rjust(9))
+                     "IC_hold".rjust(9) + "IC_orient".rjust(11) + "n".rjust(9))
             for label in self.vol_forecast:
                 v = self.vol_forecast[label]
                 L.append("  " + label.ljust(22) +
                          f"{v['ic']:+.3f}".rjust(8) +
-                         f"{v['ic_holdout']:+.3f}".rjust(12) +
+                         f"{v['ic_holdout']:+.3f}".rjust(9) +
+                         f"{v.get('ic_oriented', float('nan')):+.3f}".rjust(11) +
                          f"{v['n']}".rjust(9))
         L.append("")
         L.append(DISCLAIMER)
