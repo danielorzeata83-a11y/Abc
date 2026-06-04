@@ -13,6 +13,7 @@ Cheile se iau din mediu, niciodata hardcodate sau logate. NU consiliere de inves
 
 import io
 import json
+import time
 import urllib.parse
 import urllib.request
 from urllib.error import URLError
@@ -115,7 +116,12 @@ class YahooDailyProvider:
         self.range_ = range_
 
     def fetch(self, symbol):
-        params = urllib.parse.urlencode({"range": self.range_, "interval": "1d"})
+        # period1=0 (epoch 0) .. acum forteaza istoricul COMPLET; `range=max` e
+        # adesea limitat la o fereastra scurta pe IP-uri anonime (vezi cap la ~168 bare).
+        params = urllib.parse.urlencode({
+            "period1": 0, "period2": int(time.time()),
+            "interval": "1d", "range": self.range_,
+        })
         url = f"{self.BASE}{urllib.parse.quote(symbol)}?{params}"
         return parse_yahoo_chart(_get(self._opener, url, decode_json=True))
 

@@ -118,6 +118,7 @@ def test_yahoo_fetch_builds_url_and_returns_bars():
     assert len(b) == 2
     u = captured["url"]
     assert "finance.yahoo.com" in u and "NVDA" in u and "interval=1d" in u
+    assert "period1=0" in u                     # istoric complet, nu fereastra scurta
 
 
 # --- Twelve Data (JSON, cheie, descendent -> sortat ascendent) ---

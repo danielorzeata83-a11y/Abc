@@ -103,6 +103,8 @@ def main(argv=None, provider=None, sleeper=time.sleep):
     ap.add_argument("--daily", action="store_true",
                     help="daily Alpha Vantage compact (~100 bare); echiv. --source alphavantage")
     ap.add_argument("--data-dir")
+    ap.add_argument("--sleep", type=float, default=13.0,
+                    help="pauza intre simboluri (s); pentru yahoo poti pune 1-2")
     args = ap.parse_args(argv)
 
     cfg = Config.from_env()
@@ -121,9 +123,11 @@ def main(argv=None, provider=None, sleeper=time.sleep):
             provider = get_intraday_provider(f"av:{key}")
 
     if daily_mode:
-        run_backfill_daily(symbols, data_dir, provider, sleeper=sleeper)
+        run_backfill_daily(symbols, data_dir, provider, sleeper=sleeper,
+                           sleep_s=args.sleep)
     else:
-        run_backfill(symbols, args.months, data_dir, provider, sleeper=sleeper)
+        run_backfill(symbols, args.months, data_dir, provider, sleeper=sleeper,
+                     sleep_s=args.sleep)
 
 
 if __name__ == "__main__":
