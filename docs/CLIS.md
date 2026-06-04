@@ -56,6 +56,14 @@ Prognoză de volatilitate per simbol (z realized_var) + lead-lag, cu freshness �
 disclaimer. `--dry-run` previzualizează; fără el trimite (cere `TELEGRAM_TOKEN` +
 `TELEGRAM_CHAT_ID` din mediu sau `--token/--chat-id`). `--asof` pentru dată fixă.
 
+### `tradingview_cli.py` — trading view HTML self-contained
+```
+python tradingview_cli.py --symbols NVDA,AAPL,MSFT,AMD,TSLA --data-dir data/intraday --out results/tv.html
+```
+Pagină HTML offline (zero deps externe): lumânări OHLC + volum + sub-panou cu
+semnalul de volatilitate (z realized_var), taburi de simboluri, crosshair la hover.
+`--max-bars` câte bare recente, `--asof` dată fixă.
+
 ## Rezultate
 
 - `results/TIER2_FINDINGS.md` — sinteza onestă a testelor TIER 2 / 2b.
