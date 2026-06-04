@@ -33,6 +33,16 @@ def test_cli_runs_and_prints_report(tmp_path, capsys):
     assert "Ansamblu" in out or "ansamblu" in out.lower()
 
 
+def test_cli_runs_tier2(tmp_path, capsys):
+    d = str(tmp_path)
+    _seed(d, "AAA"); _seed(d, "BBB")
+    validate_cli.main(["--symbols", "AAA,BBB", "--data-dir", d,
+                       "--horizons", "1,5", "--indicators", "tier2"])
+    out = capsys.readouterr().out
+    assert "consiliere de investi" in out.lower()
+    assert "ts_momentum" in out and "turn_of_month" in out
+
+
 def test_cli_writes_csv_with_out(tmp_path):
     d = str(tmp_path)
     _seed(d, "AAA"); _seed(d, "BBB")

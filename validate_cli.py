@@ -8,9 +8,11 @@ NU este consiliere de investitii.
 
 import argparse
 
-from markov.validation import tier1
+from markov.validation import tier1, tier2
 from markov.validation.report import run_validation
 from markov.intraday.service import Config
+
+_TIERS = {"tier1": tier1.INDICATORS, "tier2": tier2.INDICATORS}
 
 
 def main(argv=None):
@@ -21,7 +23,7 @@ def main(argv=None):
                     help="orizonturi forward in bare (daily)")
     ap.add_argument("--target", default="return", choices=["return", "vol"],
                     help="tinta predictiei: randament (directie) sau vol (volatilitate)")
-    ap.add_argument("--indicators", default="tier1", choices=["tier1"])
+    ap.add_argument("--indicators", default="tier1", choices=list(_TIERS))
     ap.add_argument("--out", help="scrie si CSV la calea data")
     args = ap.parse_args(argv)
 
@@ -31,7 +33,7 @@ def main(argv=None):
     data_dir = args.data_dir or cfg.data_dir
     horizons = tuple(int(h) for h in args.horizons.split(",") if h.strip())
 
-    rep = run_validation(symbols, data_dir, tier1.INDICATORS, horizons=horizons,
+    rep = run_validation(symbols, data_dir, _TIERS[args.indicators], horizons=horizons,
                          target=args.target)
     print(rep.render_text())
     if args.out:
