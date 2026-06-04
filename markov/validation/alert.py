@@ -6,6 +6,7 @@ NU este consiliere de investitii.
 """
 
 import numpy as np
+import pandas as pd
 
 from markov.intraday.bars import resample
 from markov.intraday.cache import read_bars
@@ -52,11 +53,36 @@ def collect_vol(symbols, data_dir, horizon_tf="1day"):
     return rows
 
 
-def build_engine_alert(asof, vol_rows, leaders):
+def _last_date(bars):
+    """'YYYY-MM-DD' al ultimei bare, sau None daca seria e goala."""
+    if bars is None or len(bars) == 0:
+        return None
+    return str(np.datetime_as_string(bars.timestamps[-1], unit="D"))
+
+
+def _staleness_note(asof, data_asof, max_gap_days=4):
+    """Avertisment daca cele mai recente date sunt mai vechi de max_gap_days fata
+    de asof. Intoarce '' daca sunt proaspete sau nu se pot compara datele."""
+    if not data_asof:
+        return ""
+    try:
+        gap = (pd.Timestamp(asof) - pd.Timestamp(data_asof)).days
+    except (ValueError, TypeError):
+        return ""
+    if gap > max_gap_days:
+        return f"  ATENTIE: date vechi de {gap} zile -- ruleaza backfill"
+    return ""
+
+
+def build_engine_alert(asof, vol_rows, leaders, data_asof=None):
     """Mesaj text: volatilitate per simbol + clasament lead-lag. Cu disclaimer.
 
-    vol_rows: [(simbol, z, eticheta)]; leaders: [(simbol, net_score)] sortat desc."""
-    L = [f"Abc -- motor ({asof})", "",
+    vol_rows: [(simbol, z, eticheta)]; leaders: [(simbol, net_score)] sortat desc.
+    data_asof: data celei mai recente bare din cache (pentru semnal de freshness)."""
+    head = f"Abc -- motor ({asof})"
+    if data_asof:
+        head += f"\ndate pana la: {data_asof}{_staleness_note(asof, data_asof)}"
+    L = [head, "",
          "VOLATILITATE (z realized_var, ridicat = risc forward mai mare):"]
     for sym, z, label in vol_rows:
         zt = f"{z:+.2f}" if np.isfinite(z) else "  n/a"
@@ -72,8 +98,10 @@ def build_engine_alert(asof, vol_rows, leaders):
 def build_from_cache(symbols, data_dir, asof, bins=4, lag=1):
     """Orchestreaza: vol per simbol + lead-lag din cache -> mesajul gata de trimis."""
     vol_rows = collect_vol(symbols, data_dir)
+    dates = [d for d in (_last_date(read_bars(data_dir, s)) for s in symbols) if d]
+    data_asof = max(dates) if dates else None
     rets = aligned_returns(symbols, data_dir)
     syms, _M, net = lead_lag_matrix(rets, bins=bins, lag=lag)
     order = np.argsort(net)[::-1]
     leaders = [(syms[i], float(net[i])) for i in order]
-    return build_engine_alert(asof, vol_rows, leaders)
+    return build_engine_alert(asof, vol_rows, leaders, data_asof=data_asof)

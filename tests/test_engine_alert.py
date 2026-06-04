@@ -47,6 +47,21 @@ def test_build_engine_alert_has_sections_and_disclaimer():
     assert "consiliere de investi" in msg.lower()
 
 
+def test_staleness_note_flags_old_data():
+    assert alert._staleness_note("2026-06-04", "2026-06-03") == ""   # proaspat
+    assert "vechi de" in alert._staleness_note("2026-06-04", "2026-05-01")
+    assert alert._staleness_note("2026-06-04", None) == ""
+
+
+def test_build_engine_alert_shows_data_date_and_staleness():
+    fresh = alert.build_engine_alert("2026-06-04", [("AAA", 0.1, "normala")],
+                                     [("AAA", 0.0)], data_asof="2026-06-03")
+    assert "date pana la: 2026-06-03" in fresh and "ATENTIE" not in fresh
+    stale = alert.build_engine_alert("2026-06-04", [("AAA", 0.1, "normala")],
+                                     [("AAA", 0.0)], data_asof="2026-01-01")
+    assert "ATENTIE" in stale and "backfill" in stale
+
+
 def test_build_from_cache_end_to_end(tmp_path):
     d = str(tmp_path)
     rng = np.random.default_rng(1)
