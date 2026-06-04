@@ -13,7 +13,7 @@ import argparse
 import pandas as pd
 
 from markov.intraday.service import Config
-from markov.tradingview import build_html, collect_panels
+from markov.tradingview import build_html, collect_panels, lead_lag_ranking
 
 
 def main(argv=None):
@@ -35,7 +35,8 @@ def main(argv=None):
     panels = collect_panels(symbols, data_dir, max_bars=args.max_bars)
     if not panels:
         raise SystemExit(f"Niciun simbol in cache ({data_dir}). Ruleaza intai backfill_cli.")
-    html = build_html(panels, asof)
+    leadlag = lead_lag_ranking([p["symbol"] for p in panels], data_dir)
+    html = build_html(panels, asof, leadlag=leadlag)
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"Scris {args.out} ({len(panels)} simboluri, {len(html)//1024} KB).")
