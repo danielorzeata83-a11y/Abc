@@ -77,15 +77,59 @@ def evaluate_factor(returns, split_frac=0.6, n_perm=2000, seed=0):
     }
 
 
-def run_xs_validation(csv_path, factors=None, split_frac=0.6, n_perm=2000, seed=0):
-    """{nume_factor: metrici} pentru fiecare factor cross-sectional pe univers."""
-    P, V, _dates = load_universe(csv_path)
+def evaluate_universe(P, V, factors=None, split_frac=0.6, n_perm=2000, seed=0):
+    """{nume_factor: metrici} pentru fiecare factor cross-sectional pe panel (P,V)."""
     factors = factors or FACTORS
-    out = {}
-    for name, fn in factors.items():
-        out[name] = evaluate_factor(fn(P, V), split_frac=split_frac,
-                                    n_perm=n_perm, seed=seed)
-    return out
+    return {name: evaluate_factor(fn(P, V), split_frac=split_frac,
+                                  n_perm=n_perm, seed=seed)
+            for name, fn in factors.items()}
+
+
+def run_xs_validation(csv_path, factors=None, split_frac=0.6, n_perm=2000, seed=0):
+    """Ca evaluate_universe, dar incarca panel-ul dintr-un CSV long."""
+    P, V, _dates = load_universe(csv_path)
+    return evaluate_universe(P, V, factors=factors, split_frac=split_frac,
+                             n_perm=n_perm, seed=seed)
+
+
+def list_cache_symbols(data_dir):
+    """Simbolurile prezente in cache (fisiere {SYMBOL}_15m.csv), sortate."""
+    import glob
+    import os
+    paths = glob.glob(os.path.join(data_dir, "*_15m.csv"))
+    return sorted(os.path.basename(p)[:-len("_15m.csv")] for p in paths)
+
+
+def panel_from_cache(data_dir, symbols=None, horizon_tf="1day"):
+    """Construieste panel-ul cross-sectional (P (T,N), V, dates, names) din cache-ul
+    daily, pe FEREASTRA COMUNA in care toate numele tranzactioneaza (fara goluri).
+
+    Caveat onest: numai numele care acopera intreaga fereastra comuna supravietuiesc
+    (dropna) -> bias de supravietuire daca universul e ales retrospectiv."""
+    from markov.intraday.bars import resample
+    from markov.intraday.cache import read_bars
+
+    symbols = symbols or list_cache_symbols(data_dir)
+    closes, vols = {}, {}
+    for s in symbols:
+        b = read_bars(data_dir, s)
+        if b is None:
+            continue
+        b = resample(b, horizon_tf) if horizon_tf != "15m" else b
+        df = b.to_frame()
+        idx = pd.DatetimeIndex(df.index)
+        closes[s] = pd.Series(np.asarray(df["close"], dtype=float), index=idx)
+        vols[s] = pd.Series(np.asarray(df["volume"], dtype=float), index=idx)
+    if len(closes) < 2:
+        raise ValueError(f"panel_from_cache: nevoie de >=2 simboluri in cache, gasit {len(closes)}")
+    close = pd.DataFrame(closes).sort_index()
+    vol = pd.DataFrame(vols).sort_index()
+    start = max(close[c].first_valid_index() for c in close.columns)
+    end = min(close[c].last_valid_index() for c in close.columns)
+    close = close.loc[start:end].dropna(axis=1, how="any").dropna(how="any")
+    vol = vol.reindex(close.index)[close.columns]
+    return (close.to_numpy(dtype=float), vol.to_numpy(dtype=float),
+            close.index.to_numpy(), list(close.columns))
 
 
 def factor_streams(P, V, factors=None):
