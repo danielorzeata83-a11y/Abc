@@ -16,7 +16,7 @@ ATENTIE: artefact de cercetare descriptiv. NU consiliere de investitii.
 
 import numpy as np
 
-from markov.significance import permutation_test
+from markov.posscore import score_positions
 
 
 def swing_points(high, low, k=2):
@@ -139,24 +139,6 @@ def backtest_smc(bars, cost=0.0005, periods_per_year=252, n_perm=1000, seed=0,
     pos = smc_positions(bars, **kw)
     close = np.asarray(bars.close, dtype=float)
     fwd = close[1:] / close[:-1] - 1.0
-    p = pos[:-1]
-    daily = p * fwd
-    turnover = np.abs(np.diff(np.concatenate([[0.0], p])))
-    net_daily = daily - cost * turnover
-
-    sd = daily.std(ddof=0)
-    sharpe = (float(daily.mean() / sd * np.sqrt(periods_per_year))
-              if sd > 0 else float("nan"))
-    eq = np.cumprod(1.0 + net_daily)
-    peak = np.maximum.accumulate(eq)
-    mdd = float((eq / peak - 1.0).min()) if len(eq) else float("nan")
-    perm = permutation_test(p, fwd, n_perm=n_perm, seed=seed)
-    return {
-        "gross_return": float(np.prod(1.0 + daily) - 1.0),
-        "net_return": float(np.prod(1.0 + net_daily) - 1.0),
-        "sharpe": sharpe,
-        "max_drawdown": mdd,
-        "n_trades": int((turnover > 0).sum()),
-        "n_days": int(len(p)),
-        "p_value": perm["p_value"],
-    }
+    return score_positions(pos[:-1], fwd, cost=cost,
+                           periods_per_year=periods_per_year,
+                           n_perm=n_perm, seed=seed)
