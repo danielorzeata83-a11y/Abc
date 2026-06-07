@@ -12,21 +12,27 @@ import numpy as np
 import pandas as pd
 
 from markov.dip_dashboard import build_html, dashboard_rows
+from markov.intraday.bars import Bars
 from markov.intraday.cache import read_bars
 from markov.intraday.price_series import load_price_series
 
 
-def _closes(symbol, data_dir, universe):
+def _bars(symbol, data_dir, universe):
+    """Bars OHLC (-> candlestick) din universe sau cache; None daca lipseste."""
     if universe:
         raw = pd.read_csv(universe)
         g = raw[raw["Name"].astype(str) == str(symbol)].sort_values("date")
-        return g["close"].to_numpy(dtype=float) if not g.empty else None
-    bars = read_bars(data_dir, symbol)
-    return np.asarray(bars.close, dtype=float) if bars is not None else None
+        if g.empty:
+            return None
+        return Bars(pd.to_datetime(g["date"]).to_numpy(),
+                    g["open"].to_numpy(float), g["high"].to_numpy(float),
+                    g["low"].to_numpy(float), g["close"].to_numpy(float),
+                    g.get("volume", pd.Series(np.ones(len(g)))).to_numpy(float))
+    return read_bars(data_dir, symbol)
 
 
 def _items(args):
-    if args.price_csv:
+    if args.price_csv:                      # serie close-only -> sparkline
         path, dc, pc = args.price_csv.split(":")
         return [(args.name, np.asarray(load_price_series(path, dc, pc).close, dtype=float))]
     syms = [s for s in (args.watchlist or "").split(",") if s.strip()]
@@ -34,7 +40,7 @@ def _items(args):
         raise SystemExit("Da --watchlist (+ --universe/--data-dir) sau --price-csv.")
     if not args.data_dir and not args.universe:
         raise SystemExit("Da --data-dir SAU --universe.")
-    return [(s.upper(), _closes(s.upper(), args.data_dir, args.universe)) for s in syms]
+    return [(s.upper(), _bars(s.upper(), args.data_dir, args.universe)) for s in syms]
 
 
 def main(argv=None):

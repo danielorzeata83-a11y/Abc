@@ -4,6 +4,7 @@ si HTML self-contained (fara request-uri externe) care poarta disclaimerul."""
 import numpy as np
 
 from markov.dip_dashboard import build_html, dashboard_rows
+from markov.intraday.bars import Bars
 
 
 def _top():
@@ -31,8 +32,19 @@ def test_nodata_row_is_marked_and_last():
 def test_rows_carry_sparkline_and_threshold():
     rows = dashboard_rows([("FALL", _deep())], lookback=60, dip=0.4)
     r = rows[0]
+    assert r["chart"] == "line"
     assert isinstance(r["spark"], list) and 2 <= len(r["spark"]) <= 120
     assert r["thr"] is not None and r["thr"] < r["price"] / (1 - 0.40) * 1.01
+
+
+def test_bars_input_yields_candlestick_rows():
+    close = _deep()
+    bars = Bars(np.arange(len(close)).astype("datetime64[D]"),
+                close - 0.5, close + 1.0, close - 1.0, close, np.ones(len(close)))
+    rows = dashboard_rows([("STK", bars)], lookback=60, dip=0.4)
+    r = rows[0]
+    assert r["chart"] == "candle"
+    assert len(r["candles"]) > 0 and len(r["candles"][0]) == 4   # [o,h,l,c]
 
 
 def test_build_html_self_contained_with_disclaimer():

@@ -20,29 +20,52 @@ def _downsample(close, window=250, n=120):
     return [round(float(close[i]), 4) for i in idx]
 
 
+def _candles(bars, n=80):
+    """Ultimele `n` bare OHLC ca [o, h, l, c] (fara esantionare -- lumanari reale)."""
+    o = np.asarray(bars.open, dtype=float)[-n:]
+    h = np.asarray(bars.high, dtype=float)[-n:]
+    l = np.asarray(bars.low, dtype=float)[-n:]
+    c = np.asarray(bars.close, dtype=float)[-n:]
+    return [[round(float(a), 2), round(float(b), 2), round(float(d), 2),
+             round(float(e), 2)] for a, b, d, e in zip(o, h, l, c)]
+
+
+def _has_ohlc(data):
+    return all(hasattr(data, k) for k in ("open", "high", "low", "close"))
+
+
 def dashboard_rows(items, lookback=60, dip=0.4, exit_ma=20):
-    """items: list[(nume, close_array)] -> list de randuri pt dashboard, sortate
-    cu cel mai adanc drawdown sus (cele 'nodata' la coada). Fiecare rand include
-    `spark` (serie recenta) si `thr` (nivelul pragului) pentru sparkline."""
+    """items: list[(nume, data)], unde data e un Bars (OHLC -> candlestick) sau un
+    array de close (-> sparkline). Randuri sortate cu cel mai adanc drawdown sus.
+    Fiecare rand: `chart` ('candle'/'line'), `candles` sau `spark`, si `thr`."""
     rows = []
-    for name, close in items:
+    for name, data in items:
+        is_bars = data is not None and _has_ohlc(data)
+        close = (np.asarray(data.close, dtype=float) if is_bars
+                 else None if data is None else np.asarray(data, dtype=float))
         if close is None or len(close) < lookback + 2:
             rows.append({"name": name, "state": "nodata",
                          "label": "date insuficiente", "price": None,
-                         "drawdown": None, "to_threshold": None,
-                         "above_ma": False, "fill": 0.0, "spark": [], "thr": None})
+                         "drawdown": None, "to_threshold": None, "above_ma": False,
+                         "fill": 0.0, "chart": "line", "spark": [], "candles": [],
+                         "thr": None})
             continue
         s = dip_status(close, lookback=lookback, dip=dip, exit_ma=exit_ma)
         dd = s["drawdown"]
         state = ("deep" if s["in_deep_dip"]
                  else "correction" if dd < -0.05 else "near_top")
         fill = float(min(abs(dd) / dip, 1.0) * 100.0) if np.isfinite(dd) else 0.0
-        rows.append({"name": name, "state": state, "label": s["label"],
-                     "price": round(s["price"], 2), "drawdown": round(dd * 100, 1),
-                     "to_threshold": round(abs(s["to_threshold"]) * 100, 1),
-                     "above_ma": bool(s["above_exit_ma"]), "fill": round(fill, 1),
-                     "spark": _downsample(close),
-                     "thr": round(s["high"] * (1.0 - dip), 4)})
+        row = {"name": name, "state": state, "label": s["label"],
+               "price": round(s["price"], 2), "drawdown": round(dd * 100, 1),
+               "to_threshold": round(abs(s["to_threshold"]) * 100, 1),
+               "above_ma": bool(s["above_exit_ma"]), "fill": round(fill, 1),
+               "thr": round(s["high"] * (1.0 - dip), 4),
+               "spark": [], "candles": []}
+        if is_bars:
+            row["chart"], row["candles"] = "candle", _candles(data)
+        else:
+            row["chart"], row["spark"] = "line", _downsample(close)
+        rows.append(row)
     rows.sort(key=lambda r: (r["state"] == "nodata",
                              r["drawdown"] if r["drawdown"] is not None else 0.0))
     return rows
@@ -93,19 +116,41 @@ de profit. Tu decizi. __DISCLAIMER__</footer>
 <script>
 const D=__DATA__;
 const COL={deep:'#f85149',correction:'#d29922',near_top:'#2ea043'};
+const W=240,H=44,P=3;
+function svg(inner){
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" `+
+    `style="width:100%;height:44px">${inner}</svg>`;
+}
+function thrLine(ty){
+  return `<line x1="0" y1="${ty}" x2="${W}" y2="${ty}" stroke="#f85149" `+
+    `stroke-dasharray="3 3" stroke-width="1" opacity="0.65"/>`;
+}
 function spark(r){
   const v=r.spark; if(!v||v.length<2) return '';
-  const W=240,H=44,p=3,lo=Math.min(...v,r.thr),hi=Math.max(...v,r.thr),rng=(hi-lo)||1;
-  const sx=i=>p+i*(W-2*p)/(v.length-1), sy=val=>p+(hi-val)*(H-2*p)/rng;
+  const lo=Math.min(...v,r.thr),hi=Math.max(...v,r.thr),rng=(hi-lo)||1;
+  const sx=i=>P+i*(W-2*P)/(v.length-1), sy=val=>P+(hi-val)*(H-2*P)/rng;
   const pts=v.map((val,i)=>sx(i).toFixed(1)+','+sy(val).toFixed(1)).join(' ');
-  const ty=sy(r.thr).toFixed(1);
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" `+
-    `style="width:100%;height:44px">`+
-    `<line x1="0" y1="${ty}" x2="${W}" y2="${ty}" stroke="#f85149" `+
-    `stroke-dasharray="3 3" stroke-width="1" opacity="0.65"/>`+
-    `<polyline points="${pts}" fill="none" stroke="${COL[r.state]}" stroke-width="1.5"/>`+
-    `</svg>`;
+  return svg(thrLine(sy(r.thr).toFixed(1))+
+    `<polyline points="${pts}" fill="none" stroke="${COL[r.state]}" stroke-width="1.5"/>`);
 }
+function candles(r){
+  const v=r.candles; if(!v||v.length<1) return '';
+  const lo=Math.min(r.thr,...v.map(b=>b[2])), hi=Math.max(r.thr,...v.map(b=>b[1]));
+  const rng=(hi-lo)||1, n=v.length, cw=(W-2*P)/n;
+  const sy=val=>P+(hi-val)*(H-2*P)/rng;
+  let s='';
+  v.forEach((b,i)=>{
+    const x=P+i*cw+cw/2, col=b[3]>=b[0]?'#2ea043':'#f85149';
+    const top=Math.min(sy(b[0]),sy(b[3])), bh=Math.max(0.8,Math.abs(sy(b[3])-sy(b[0])));
+    const bw=Math.max(1,cw*0.6);
+    s+=`<line x1="${x.toFixed(1)}" y1="${sy(b[1]).toFixed(1)}" x2="${x.toFixed(1)}" `+
+       `y2="${sy(b[2]).toFixed(1)}" stroke="${col}" stroke-width="0.7"/>`;
+    s+=`<rect x="${(x-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" `+
+       `height="${bh.toFixed(1)}" fill="${col}"/>`;
+  });
+  return svg(s+thrLine(sy(r.thr).toFixed(1)));
+}
+function chart(r){ return r.chart==='candle' ? candles(r) : spark(r); }
 document.getElementById('sub').textContent =
   `${D.rows.length} active · prag dip ${D.dip}% sub maxim`+(D.asof?` · ${D.asof}`:'');
 const g=document.getElementById('grid');
@@ -120,7 +165,7 @@ for(const r of D.rows){
   c.innerHTML=`<div class="row1"><span class="name">${r.name}</span>`+
     `<span class="price">${r.price}</span></div>`+
     `<div class="dd ${r.state}">${r.drawdown}%</div>`+
-    `<div class="spark">${spark(r)}</div>`+
+    `<div class="spark">${chart(r)}</div>`+
     `<div class="label">${r.label} · ${tt}</div>`;
   g.appendChild(c);
 }
