@@ -17,7 +17,8 @@ import pandas as pd
 
 from markov.intraday.bars import Bars
 from markov.intraday.cache import read_bars
-from markov.trendpull import walk_forward_select
+from markov.posscore import score_positions
+from markov.trendpull_eval import bh_metrics, pooled_significance, select_oos_streams
 
 DISCLAIMER = "NU este consiliere de investitii. Harness de verificare descriptiv."
 
@@ -35,31 +36,46 @@ def _load_bars(symbol, data_dir, universe):
     return read_bars(data_dir, symbol)
 
 
-def _row(sym, r):
-    o = r["oos"]
-    sh = f"{o['sharpe']:+.2f}" if np.isfinite(o["sharpe"]) else " n/a"
-    return (f"  {sym:<6} mult={r['chosen_mult']:<3} | OOS: "
-            f"net={o['net_return']*100:+6.1f}%  Sharpe={sh}  "
-            f"maxDD={o['max_drawdown']*100:5.0f}%  trades={o['n_trades']:3d}  "
-            f"p={o['p_value']:.3f}")
+def _sh(v):
+    return f"{v:+.2f}" if np.isfinite(v) else " n/a"
+
+
+def _row(sym, mult, strat, bh, in_mkt):
+    edge = strat["sharpe"] - bh["bh_sharpe"]
+    return (f"  {sym:<6} m={mult:<3} | SISTEM net={strat['net_return']*100:+6.1f}% "
+            f"Sh={_sh(strat['sharpe'])} p={strat['p_value']:.3f} "
+            f"| B&H net={bh['bh_return']*100:+6.1f}% Sh={_sh(bh['bh_sharpe'])} "
+            f"| edge_Sh={_sh(edge)} in-mkt={in_mkt*100:3.0f}%")
 
 
 def run(symbols, data_dir, universe, cost_bps, mults, split, n_perm, **rule_kw):
+    cost = cost_bps / 1e4
     out = [DISCLAIMER, "",
-           "=== TREND-PULLBACK (long-only) | walk-forward (in-sample alege mult,"
-           " OOS = verdict) ===",
-           f"mults testati: {list(mults)}  split={split}  cost={cost_bps} bps", ""]
+           "=== TREND-PULLBACK (long-only) vs BUY&HOLD pe felia OOS ===",
+           f"mults: {list(mults)}  split={split}  cost={cost_bps} bps  "
+           "(in-sample alege mult; OOS = verdict)", ""]
+    streams = []
     for sym in symbols:
         bars = _load_bars(sym.upper(), data_dir, universe)
         if bars is None or len(bars) < 120:
             out.append(f"  {sym:<6} (date insuficiente)")
             continue
-        r = walk_forward_select(bars, mults=mults, split=split,
-                                cost=cost_bps / 1e4, n_perm=n_perm, **rule_kw)
-        out.append(_row(sym.upper(), r))
-    out += ["", "Citeste onest: conteaza coloana OOS. p>=0.05 => timing"
-            " nedistins de noroc. Numarul de trade-uri OOS ~ trenduri prinse.",
-            "", DISCLAIMER]
+        mult, pos, fwd = select_oos_streams(bars, mults=mults, split=split,
+                                            cost=cost, **rule_kw)
+        strat = score_positions(pos, fwd, cost=cost, n_perm=n_perm)
+        bh = bh_metrics(fwd)
+        in_mkt = float((pos > 0).mean())
+        out.append(_row(sym.upper(), mult, strat, bh, in_mkt))
+        streams.append((pos, fwd))
+    if streams:
+        pooled = pooled_significance(streams, cost=cost, n_perm=n_perm)
+        out += ["",
+                f"  POOLED (un singur test pe tot watchlist-ul): "
+                f"net={pooled['net_return']*100:+.1f}%  Sh={_sh(pooled['sharpe'])}  "
+                f"zile={pooled['n_days']}  p={pooled['p_value']:.3f}"]
+    out += ["", "Citeste onest: 'edge_Sh' = Sharpe sistem - Sharpe B&H (timing peste"
+            " a sta long). POOLED p<0.05 = timing real pe portofoliu, dincolo de"
+            " testarea multipla. in-mkt = % timp in piata.", "", DISCLAIMER]
     return "\n".join(out)
 
 

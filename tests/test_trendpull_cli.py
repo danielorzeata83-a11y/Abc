@@ -22,6 +22,7 @@ def test_run_reports_oos_table_and_disclaimer(tmp_path):
     _write_csv(csv)
     txt = cli.run(["TEST"], None, str(csv), cost_bps=5.0,
                   mults=(2.0, 3.0), split=0.5, n_perm=50)
-    assert "TREND-PULLBACK" in txt and "OOS:" in txt
+    assert "TREND-PULLBACK" in txt and "B&H" in txt
+    assert "SISTEM" in txt and "POOLED" in txt
     assert "TEST" in txt
     assert "consiliere de investi" in txt.lower()
