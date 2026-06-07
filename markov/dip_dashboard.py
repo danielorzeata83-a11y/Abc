@@ -11,16 +11,26 @@ import numpy as np
 from markov.dipmonitor import DISCLAIMER, dip_status
 
 
+def _downsample(close, window=250, n=120):
+    """Ultimele `window` inchideri, esantionate la cel mult `n` puncte (HTML mic)."""
+    close = np.asarray(close, dtype=float)[-window:]
+    if len(close) <= n:
+        return [round(float(x), 4) for x in close]
+    idx = np.linspace(0, len(close) - 1, n).astype(int)
+    return [round(float(close[i]), 4) for i in idx]
+
+
 def dashboard_rows(items, lookback=60, dip=0.4, exit_ma=20):
     """items: list[(nume, close_array)] -> list de randuri pt dashboard, sortate
-    cu cel mai adanc drawdown sus (cele 'nodata' la coada)."""
+    cu cel mai adanc drawdown sus (cele 'nodata' la coada). Fiecare rand include
+    `spark` (serie recenta) si `thr` (nivelul pragului) pentru sparkline."""
     rows = []
     for name, close in items:
         if close is None or len(close) < lookback + 2:
             rows.append({"name": name, "state": "nodata",
                          "label": "date insuficiente", "price": None,
                          "drawdown": None, "to_threshold": None,
-                         "above_ma": False, "fill": 0.0})
+                         "above_ma": False, "fill": 0.0, "spark": [], "thr": None})
             continue
         s = dip_status(close, lookback=lookback, dip=dip, exit_ma=exit_ma)
         dd = s["drawdown"]
@@ -30,7 +40,9 @@ def dashboard_rows(items, lookback=60, dip=0.4, exit_ma=20):
         rows.append({"name": name, "state": state, "label": s["label"],
                      "price": round(s["price"], 2), "drawdown": round(dd * 100, 1),
                      "to_threshold": round(abs(s["to_threshold"]) * 100, 1),
-                     "above_ma": bool(s["above_exit_ma"]), "fill": round(fill, 1)})
+                     "above_ma": bool(s["above_exit_ma"]), "fill": round(fill, 1),
+                     "spark": _downsample(close),
+                     "thr": round(s["high"] * (1.0 - dip), 4)})
     rows.sort(key=lambda r: (r["state"] == "nodata",
                              r["drawdown"] if r["drawdown"] is not None else 0.0))
     return rows
@@ -67,11 +79,7 @@ border-left:5px solid var(--muted)}
 .price{color:var(--muted)}
 .dd{font-size:22px;font-weight:700;margin:6px 0}
 .dd.deep{color:var(--red)}.dd.correction{color:var(--yellow)}.dd.near_top{color:var(--green)}
-.bar{height:8px;background:#2b313b;border-radius:4px;overflow:hidden;margin:6px 0}
-.bar>span{display:block;height:100%}
-.bar>span.deep{background:var(--red)}
-.bar>span.correction{background:var(--yellow)}
-.bar>span.near_top{background:var(--green)}
+.spark{margin:6px 0;line-height:0}
 .label{color:var(--muted);font-size:13px}
 footer{color:var(--muted);font-size:12px;margin-top:18px;
 border-top:1px solid #21262d;padding-top:10px}
@@ -84,6 +92,20 @@ border-top:1px solid #21262d;padding-top:10px}
 de profit. Tu decizi. __DISCLAIMER__</footer>
 <script>
 const D=__DATA__;
+const COL={deep:'#f85149',correction:'#d29922',near_top:'#2ea043'};
+function spark(r){
+  const v=r.spark; if(!v||v.length<2) return '';
+  const W=240,H=44,p=3,lo=Math.min(...v,r.thr),hi=Math.max(...v,r.thr),rng=(hi-lo)||1;
+  const sx=i=>p+i*(W-2*p)/(v.length-1), sy=val=>p+(hi-val)*(H-2*p)/rng;
+  const pts=v.map((val,i)=>sx(i).toFixed(1)+','+sy(val).toFixed(1)).join(' ');
+  const ty=sy(r.thr).toFixed(1);
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" `+
+    `style="width:100%;height:44px">`+
+    `<line x1="0" y1="${ty}" x2="${W}" y2="${ty}" stroke="#f85149" `+
+    `stroke-dasharray="3 3" stroke-width="1" opacity="0.65"/>`+
+    `<polyline points="${pts}" fill="none" stroke="${COL[r.state]}" stroke-width="1.5"/>`+
+    `</svg>`;
+}
 document.getElementById('sub').textContent =
   `${D.rows.length} active · prag dip ${D.dip}% sub maxim`+(D.asof?` · ${D.asof}`:'');
 const g=document.getElementById('grid');
@@ -98,7 +120,7 @@ for(const r of D.rows){
   c.innerHTML=`<div class="row1"><span class="name">${r.name}</span>`+
     `<span class="price">${r.price}</span></div>`+
     `<div class="dd ${r.state}">${r.drawdown}%</div>`+
-    `<div class="bar"><span class="${r.state}" style="width:${r.fill}%"></span></div>`+
+    `<div class="spark">${spark(r)}</div>`+
     `<div class="label">${r.label} · ${tt}</div>`;
   g.appendChild(c);
 }

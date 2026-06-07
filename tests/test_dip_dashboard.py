@@ -28,10 +28,18 @@ def test_nodata_row_is_marked_and_last():
     assert rows[-1]["name"] == "SHORT" and rows[-1]["state"] == "nodata"
 
 
+def test_rows_carry_sparkline_and_threshold():
+    rows = dashboard_rows([("FALL", _deep())], lookback=60, dip=0.4)
+    r = rows[0]
+    assert isinstance(r["spark"], list) and 2 <= len(r["spark"]) <= 120
+    assert r["thr"] is not None and r["thr"] < r["price"] / (1 - 0.40) * 1.01
+
+
 def test_build_html_self_contained_with_disclaimer():
     rows = dashboard_rows([("FALL", _deep())], lookback=60, dip=0.4)
     html = build_html(rows, asof="2026-06-07", dip=0.4)
     assert "<!DOCTYPE html>" in html
     assert "FALL" in html and "2026-06-07" in html
+    assert '"spark"' in html and "<svg" in html.lower() or "svg" in html  # sparkline
     assert "consiliere de investi" in html.lower()
     assert "http://" not in html and "https://" not in html   # zero request extern
