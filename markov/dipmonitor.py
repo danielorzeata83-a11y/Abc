@@ -13,6 +13,8 @@ import numpy as np
 from markov.dipbuy import drawdown, rolling_high
 from markov.trendpull import ma
 
+DISCLAIMER = "NU este consiliere de investitii. Artefact descriptiv -- NU semnal."
+
 
 def dip_status(close, lookback=60, dip=0.4, exit_ma=20):
     """Snapshot al regulii dip-adanc pentru ultima bara. Descriptiv."""
@@ -42,3 +44,41 @@ def dip_status(close, lookback=60, dip=0.4, exit_ma=20):
         "in_deep_dip": bool(in_deep), "to_threshold": float(to_threshold),
         "above_exit_ma": bool(above_exit), "label": label,
     }
+
+
+def dip_alert(items, asof="", lookback=60, dip=0.4, exit_ma=20, near=0.05):
+    """Construieste alerta LINISTITA: listeaza doar numele in zona de dip adanc
+    sau aproape de prag (in `near`). `active` e False cand nu e nimic de raportat
+    (ca alerta sa nu spameze zilnic). items: list[(nume, close_array)].
+
+    Intoarce {"text": str, "active": bool}. Descriptiv, NU semnal de cumparare.
+    """
+    deep, close_to = [], []
+    for name, close in items:
+        if close is None or len(close) < lookback + 2:
+            continue
+        s = dip_status(close, lookback=lookback, dip=dip, exit_ma=exit_ma)
+        if s["in_deep_dip"]:
+            deep.append((name, s))
+        elif -near <= s["to_threshold"] < 0:
+            close_to.append((name, s))
+
+    L = [f"Abc -- alerta dip-adanc {asof}".strip(),
+         f"(prag {dip*100:.0f}% sub maximul a {lookback} zile)", ""]
+    if deep:
+        L.append("IN ZONA DE DIP ADANC:")
+        for name, s in deep:
+            ma_tag = "peste MA (redresare?)" if s["above_exit_ma"] else "inca sub MA"
+            L.append(f"  {name}: {s['drawdown']*100:.0f}% sub maxim -- {ma_tag}")
+    if close_to:
+        L.append("" if deep else "")
+        L.append("APROAPE de prag:")
+        for name, s in close_to:
+            L.append(f"  {name}: {s['drawdown']*100:.0f}% sub maxim, "
+                     f"mai cade {abs(s['to_threshold'])*100:.0f}% pana la prag")
+    if not deep and not close_to:
+        L.append("Nimic in zona de dip adanc azi.")
+    L += ["",
+          "Reaminteste: regula a fost FRANA DE RISC (drawdown injumatatit in crize),",
+          "nu accelerator de profit. Tu decizi.", "", DISCLAIMER]
+    return {"text": "\n".join(L), "active": bool(deep or close_to)}
