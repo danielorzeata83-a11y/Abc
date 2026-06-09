@@ -49,3 +49,28 @@ def test_load_filters_symbols(tmp_path):
     _standard_df().to_csv(f, index=False)
     out = load_flat_files([str(f)], symbols=["AAPL"])
     assert set(out["Name"]) == {"AAPL"} and len(out) == 2
+
+
+def test_real_19digit_ns_timestamp():
+    # 2023-03-28 = 1679990400 s -> ns = 1679990400000000000 (19 cifre, ca in massive)
+    df = pd.DataFrame({"ticker": ["MSFT"], "volume": [1975], "open": [276.75],
+                       "close": [275.52], "high": [276.75], "low": [275.25],
+                       "window_start": [1679990400000000000], "transactions": [83]})
+    assert parse_flat_file(df).iloc[0]["date"] == "2023-03-28"
+
+
+def test_minute_rows_aggregate_to_one_daily_bar(tmp_path):
+    # doua bare de minut MSFT in aceeasi zi -> o bara/zi (OHLC corect, volum sumat)
+    t1 = 1679990400000000000           # 2023-03-28 13:00
+    t2 = t1 + 60_000000000             # +1 minut
+    f = tmp_path / "min.csv"
+    pd.DataFrame({"ticker": ["MSFT", "MSFT"], "volume": [1975, 2349],
+                  "open": [276.75, 275.20], "close": [275.52, 274.46],
+                  "high": [276.75, 275.20], "low": [275.25, 274.46],
+                  "window_start": [t1, t2], "transactions": [83, 99]}).to_csv(f, index=False)
+    out = load_flat_files([str(f)])
+    assert len(out) == 1
+    r = out.iloc[0]
+    assert r["open"] == 276.75 and r["close"] == 274.46         # first / last
+    assert r["high"] == 276.75 and r["low"] == 274.46           # max / min
+    assert r["volume"] == 1975 + 2349                           # sumat
