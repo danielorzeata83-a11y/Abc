@@ -582,8 +582,10 @@ def build_politicians(contact):
 
 
 def _smart_loop(smart, hours, stop):
-    while not stop.wait(hours * 3600):
-        smart.start()                    # no-op unless SEC published a newer quarter
+    while True:
+        smart.start()                    # at launch, then every `hours`; no-op unless SEC published a newer quarter
+        if stop.wait(hours * 3600):
+            break
 
 
 def build_watcher(hub):

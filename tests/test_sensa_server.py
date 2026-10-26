@@ -724,3 +724,15 @@ def test_most_held_tickers_and_the_institutional_landing_lead_to_the_investors_p
     assert "'/stock/'+" in srv.render_smart_money() and "/investors" in srv.render_smart_money()
     html = srv.render_institutional()
     assert 'id="tkf"' in html and "/investors" in html
+
+
+def test_the_update_loop_checks_immediately_at_launch_and_then_waits():
+    import threading
+    stop, calls = threading.Event(), []
+
+    class Job:
+        def start(self):
+            calls.append(1)
+            stop.set()                       # the next wait returns at once, ending the loop
+    srv._smart_loop(Job(), 24, stop)
+    assert calls == [1]
