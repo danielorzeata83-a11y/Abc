@@ -1,0 +1,104 @@
+"""Performance views served to the pages: a fund's portfolio at today's prices, and cached leaderboards.
+
+Leaderboards (funds, House members, insiders) take minutes the first time (prices for hundreds of tickers), so
+each one is a background job that writes its result to disk and keeps the last good one if a run fails."""
+
+import json
+import os
+import threading
+import time
+from datetime import datetime, timezone
+
+from markov.data_providers import DataUnavailable
+from sensa.holders import portfolio_for_cik
+from sensa.jobs import BackgroundJob
+from sensa.performance import fund_performance
+
+
+class PerfJob(BackgroundJob):
+    def __init__(self, label, compute, path):
+        super().__init__(label)
+        self.compute, self.path = compute, path
+
+    def check(self, force=False):
+        data = self.compute()
+        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "data": data}, fh)
+        os.replace(tmp, self.path)
+        return data
+
+    def result(self):
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            raise DataUnavailable("Performance numbers are not computed yet. They are built in the background after "
+                                  "start-up (a few minutes the first time); press Compute now to start immediately.") from None
+
+    def status(self):
+        st = self.state()
+        try:
+            st["generated"] = self.result()["generated"]
+        except DataUnavailable:
+            st["generated"] = None
+        return st
+
+
+class PortfolioService:
+    def __init__(self, holders_db, live_db, figi, prices, top_n=40, ttl=3600, clock=time.time):
+        self.db, self.live_db, self.figi, self.prices = holders_db, live_db, figi, prices
+        self.top_n, self.ttl, self._clock = top_n, ttl, clock
+        self._cache, self._lock = {}, threading.Lock()
+
+    def fund(self, cik, top_n=None):
+        n = top_n or self.top_n
+        key = (cik, n)
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit and self._clock() - hit[0] < self.ttl:
+                return hit[1]
+        p = portfolio_for_cik(self.db, cik, self.live_db)
+        if p is None:
+            raise KeyError(cik)
+        top = sorted(p["positions"], key=lambda x: x["value"], reverse=True)[:n]
+        info = self.figi.info([x["cusip"] for x in top])
+        tickers = {c: v["ticker"] for c, v in info.items() if v.get("kind") in ("stock", "adr", "etf") and v.get("ticker")}
+        self.prices.warm(list(tickers.values()) + ["SPY"])
+        r = fund_performance(p["positions"], tickers.get, self.prices, p["period"], p["filed"], top_n=n)
+        r.update(cik=cik, name=p["name"])
+        with self._lock:
+            self._cache[key] = (self._clock(), r)
+        return r
+
+
+def funds_board(overview, portfolio, top_n=25):
+    """The top funds ranked by what their reported portfolio has returned since the report became public."""
+    rows = []
+    for f in overview["funds"]:
+        try:
+            r = portfolio.fund(f["cik"], top_n=top_n)
+        except (KeyError, DataUnavailable):
+            continue
+        rows.append({"rank": f["rank"], "cik": f["cik"], "name": f["name"], "aum": f["aum"], "period": r["period"], "filed": r["filed"],
+                     "return_since_period_pct": r["return_since_period_pct"], "return_since_filing_pct": r["return_since_filing_pct"],
+                     "spy_since_period_pct": r["spy_since_period_pct"], "spy_since_filing_pct": r["spy_since_filing_pct"],
+                     "covered_pct": r["covered_pct"]})
+    return sorted(rows, key=lambda r: (r["return_since_filing_pct"] is None, -(r["return_since_filing_pct"] or 0)))
+
+
+def members_board(politicians, prices, days=365):
+    from sensa.performance import member_leaderboard
+    trades = politicians.trades_since(days)
+    prices.warm(sorted({t["ticker"] for t in trades if t.get("ticker") and t["type"] == "purchase"} | {"SPY"}))
+    return member_leaderboard(trades, prices)
+
+
+def insiders_board(insiders, prices, days=180, min_buy=25_000, min_balance_trade=100_000):
+    from sensa.performance import insider_buy_performance, insider_holdings
+    trades = insiders.trades_since(days)
+    buys = [t for t in trades if t["side"] == "buy" and t["value"] >= min_buy]
+    big = [t for t in trades if t["value"] >= min_balance_trade and t.get("owned_after")]
+    prices.warm(sorted({t["symbol"] for t in buys} | {t["symbol"] for t in big} | {"SPY"}))
+    return {"performance": insider_buy_performance(buys, prices), "holdings": insider_holdings(big, prices)[:50]}

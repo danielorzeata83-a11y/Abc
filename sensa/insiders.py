@@ -51,15 +51,23 @@ def load_trades(submission, owners, trans):
         if not d:
             continue
         k = (acc, d, side)
+        owned = None
+        if (r.get("DIRECT_INDIRECT_OWNERSHIP") or "").strip().upper() == "D":
+            try:
+                owned = float(r.get("SHRSOWNFOLWNG") or "")
+            except ValueError:
+                owned = None
         m = merged.get(k)
         if m is None:
             s, o = subs[acc], own.get(acc, [])
             merged[k] = {"symbol": s["symbol"], "issuer": s["issuer"], "owner": " / ".join(sorted({n for n, _, _ in o})) or "Unknown",
                          "role": _role(o), "side": side, "shares": shares, "value": shares * price, "date": d,
-                         "filed": s["filed"], "accession": acc, "plan": s["plan"]}
+                         "filed": s["filed"], "accession": acc, "plan": s["plan"], "owned_after": owned}
         else:
             m["shares"] += shares
             m["value"] += shares * price
+            if owned is not None:
+                m["owned_after"] = owned                      # the last direct line of the day carries the final balance
     # the same trade is often filed once per joint reporting owner: count it once, name everyone
     uniq = {}
     for t in merged.values():
@@ -201,6 +209,15 @@ class InsiderService(BackgroundJob):
         if d is not None:
             self._data = None
         return d
+
+    def trades_since(self, days):
+        """Trades in the last `days` before the newest one (for performance work)."""
+        d = self._load()
+        from datetime import date, timedelta
+        if not d["trades"] or days <= 0:
+            return []
+        end = date.fromisoformat(d["as_of"])
+        return [t for t in d["trades"] if t["date"] >= (end - timedelta(days=days)).isoformat()]
 
     def overview(self, days=30, include_plans=True):
         d = self._load()

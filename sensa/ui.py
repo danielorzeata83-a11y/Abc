@@ -41,6 +41,25 @@ function tkLink(sym,cls){const a=document.createElement('a');a.textContent=sym;
   if(/^[A-Z][A-Z0-9.\-]{0,9}$/.test(v))location.href='/stock/'+encodeURIComponent(v)}})();
 """
 
+PERF_JS = r"""
+const fmtPct=v=>v==null?'-':(v>0?'+':'')+v.toFixed(1)+'%',pcls=v=>v==null?'mut':v>0?'up':v<0?'dn':'mut';
+function perfView(kind,render){const box=document.createElement('div');
+ const line=(t,c)=>{const d=document.createElement('div');d.textContent=t;if(c)d.className=c;return d};
+ async function load(){let j;
+  try{const r=await fetch('/api/performance/'+kind);j=await r.json();if(!r.ok)throw new Error(j.error||r.status)}
+  catch(e){box.replaceChildren(line(e.message,'err'));return}
+  const running=j.status&&j.status.state==='running';
+  if(j.data==null){const b=document.createElement('button');b.className='btn';b.textContent='Compute now';b.disabled=running;
+   b.onclick=async()=>{await fetch('/api/performance/'+kind+'/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});load()};
+   box.replaceChildren(line(running?'Pricing the positions… this takes a few minutes the first time.':(j.message||'Not computed yet.'),'mut'),
+    ...(j.status&&j.status.state==='error'?[line('Last run failed: '+j.status.message,'err')]:[]),b);
+   if(running)setTimeout(load,4000);return}
+  const note=line('Prices as of the last close (Yahoo Finance), computed '+(j.generated||'').replace('T',' ')+' UTC'+(running?' · refreshing…':'')+
+   '. Buy-and-hold on reported positions; "since filing" starts the day the report became public. Not investment advice.','note');
+  box.replaceChildren(render(j.data),note);if(running)setTimeout(load,4000)}
+ box.textContent='Loading…';load();return box}
+"""
+
 NAV_CSS = r"""
 .nav .gs{margin-left:auto}.nav .gs input{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.3rem .6rem;font:inherit;width:210px}.nav .gs input:not(:placeholder-shown){text-transform:uppercase}
 a.tk-link{font-weight:700}
@@ -62,7 +81,7 @@ def shell(title, active, body, script="", extra_css=""):
             f'{nav(active)}{body}'
             f'<footer class="foot">Research artifact - not investment advice. '
             f'13F data: SEC EDGAR. Tickers: OpenFIGI.</footer>'
-            f'<script>{LINK_JS}</script><script>{script}</script></body></html>')
+            f'<script>{LINK_JS}{PERF_JS}</script><script>{script}</script></body></html>')
 
 
 # ---------------------------------------------------------------- manager page
@@ -121,6 +140,7 @@ _MANAGER_BODY = r"""
    <section class="card"><div class="head"><h3>Portfolio Value Over Time</h3><div class="seg" id="ranges"></div></div>
     <div id="chart"></div></section>
    <section class="card"><h3>Top Holdings</h3><div class="tops" id="tops"></div></section>
+   <section class="card"><h3>Portfolio at today's prices</h3><div id="perf" class="mut">Pricing the positions… the first time can take half a minute.</div></section>
    <section class="card"><div class="head"><h3>13F Filing History <span class="chip" id="cnt"></span></h3></div>
     <div class="tbl"><table class="t"><thead><tr><th>Quarter</th><th>Holdings</th><th>Value</th>
      <th>Top Holdings</th><th>Form</th><th>Date Filed</th><th>Filing ID</th></tr></thead>
@@ -222,6 +242,14 @@ async function post(path,body){const r=await fetch(path,{method:'POST',headers:{
 fetch('/api/watch').then(r=>r.ok?r.json():null).then(w=>{if(!w)return;followed=w.following.some(f=>f.cik===CIK);drawFollow()}).catch(()=>{});
 $('follow').onclick=async()=>{try{await post('/api/watch/'+(followed?'unfollow':'follow'),{cik:CIK});followed=!followed;drawFollow()}catch(e){$('msg').textContent=e.message}};
 api('/api/manager/'+CIK).then(drawHeader).catch(e=>{$('name').textContent='Manager not available';$('msg').textContent=e.message});
+api('/api/portfolio/'+CIK).then(p=>{const b=$('perf'),pc=v=>el('span',fmtPct(v),pcls(v));
+ if(p.covered_positions===0){b.textContent='No positions could be priced.';return}
+ const sum=el('div',null,'meta');for(const [k,v] of [['Value at quarter end',money(p.value_period_end)],['Value now',money(p.value_now)],['Since quarter end',fmtPct(p.return_since_period_pct)],
+  ['Since filing ('+fdate(p.filed)+')',fmtPct(p.return_since_filing_pct)],['S&P 500 since filing',fmtPct(p.spy_since_filing_pct)],['Priced',p.covered_pct.toFixed(0)+'% of value']]){const d=el('div'),a=el('span',k),bb=el('b',v);d.append(a,bb);sum.append(d)}
+ const t=el('table',null,'t'),h=el('tr');for(const x of ['Stock','Weight','Price at filing','Price now','Since filing']){h.append(el('th',x))}const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+ for(const r of p.rows){const tr=el('tr'),c=el('td');c.append(tkLink(r.ticker));tr.append(c,el('td',r.weight==null?'-':r.weight.toFixed(2)+'%'),el('td','$'+r.px_filed.toFixed(2)),el('td','$'+r.px_now.toFixed(2)),el('td',fmtPct(r.change_since_filing_pct),pcls(r.change_since_filing_pct)));tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);
+ b.replaceChildren(sum,w,el('div','Buy-and-hold on the largest reported positions with a listed ticker, priced at the last close ('+(p.as_of||'-')+'). 13F shows long positions at quarter end only; the fund may have traded since.','note'))}).catch(e=>{$('perf').textContent=e.message});
 show(0);
 setInterval(()=>api('/api/manager/'+CIK).then(drawHeader).catch(()=>{}),600000);   // header stays current
 """
@@ -403,6 +431,17 @@ function heldView(){const rows=O.stocks.filter(s=>okKind(s)&&!s.gone);
   {k:'added',l:'Added',n:1,f:s=>String(s.added)},{k:'reduced',l:'Reduced',n:1,f:s=>String(s.reduced)},
   {k:'new',l:'New',n:1,f:s=>String(s.new)},{k:'exited',l:'Exited',n:1,f:s=>String(s.exited)}];
  return table(cols,rows,'holders')}
+function perfFundsView(){return perfView('funds',rows=>{const pc=(k)=>f=>cell(fmtPct(f[k]),pcls(f[k]));
+ const alpha=f=>f.return_since_filing_pct==null||f.spy_since_filing_pct==null?null:Math.round((f.return_since_filing_pct-f.spy_since_filing_pct)*100)/100;
+ const cols=[{k:'rank',l:'#',dir:1,f:f=>String(f.rank)},
+  {k:'name',l:'Fund',dir:1,r:f=>{const d=el('td');if(/^[0-9]{1,10}$/.test(f.cik)){const a=el('a',f.name);a.href='/institutional-investor/manager/'+f.cik;d.append(a)}else d.textContent=f.name;return d}},
+  {k:'aum',l:'Reported value',n:1,f:f=>money(f.aum)},
+  {k:'return_since_period_pct',l:'Since quarter end',n:1,v:f=>f.return_since_period_pct==null?-1e9:f.return_since_period_pct,r:pc('return_since_period_pct')},
+  {k:'return_since_filing_pct',l:'Since filing',n:1,v:f=>f.return_since_filing_pct==null?-1e9:f.return_since_filing_pct,r:pc('return_since_filing_pct')},
+  {k:'spy_since_filing_pct',l:'S&P 500 since filing',n:1,v:f=>f.spy_since_filing_pct==null?-1e9:f.spy_since_filing_pct,r:pc('spy_since_filing_pct')},
+  {k:'alpha',l:'vs S&P 500',n:1,v:f=>alpha(f)==null?-1e9:alpha(f),r:f=>cell(fmtPct(alpha(f)),pcls(alpha(f)))},
+  {k:'covered_pct',l:'Priced',n:1,f:f=>f.covered_pct.toFixed(0)+'% of value'}];
+ return table(cols,rows,'return_since_filing_pct')})}
 function list(title,rows,right,sub){const c=el('section',null,'card');c.append(el('h3',title));if(sub)c.append(el('div',sub,'note'));
  if(!rows.length)c.append(el('div','Nothing to show','mut'));
  for(const s of rows.slice(0,10)){const r=el('div',null,'mrow'),l=el('span'),b=tkLink(s.ticker);l.append(b,document.createTextNode(' '+s.issuer));
@@ -428,15 +467,15 @@ function fundsView(){const cols=[{k:'rank',l:'#',dir:1,f:f=>String(f.rank)},
   {k:'exited',l:'Exited',n:1,v:f=>f.exited==null?-1:f.exited,f:f=>f.exited==null?'-':String(f.exited)}];
  return table(cols,O.funds,'rank')}
 function draw(){if(!O)return;const v=$('view');
- v.replaceChildren(tab==='held'?heldView():tab==='moves'?movesView():fundsView())}
+ v.replaceChildren(tab==='held'?heldView():tab==='moves'?movesView():tab==='perf'?perfFundsView():fundsView())}
 function drawAll(){$('stats').replaceChildren(
   ...[['Funds in view',String(O.cohort),O.comparable+' comparable with '+O.prev_quarter],['Reported value',money(O.total_aum),O.quarter],
       ['Distinct stocks',O.distinct_stocks.toLocaleString(),'held by at least one of them'],['Stock splits adjusted',String((O.splits||[]).length),'so they do not look like buying']]
    .map(([k,v,d])=>{const c=el('div',null,'card stat');c.append(el('div',k,'k'),el('div',v,'v'),el('div',d,'d mut'));return c}));
  const t=$('tabs');t.replaceChildren();
- for(const [k,l] of [['held','Most held'],['moves','Moves'],['funds','Top funds']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;sortKey=null;drawAll()};t.append(b)}
+ for(const [k,l] of [['held','Most held'],['moves','Moves'],['funds','Top funds'],['perf','Performance']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;sortKey=null;drawAll()};t.append(b)}
  const sel=el('select',null,'sel');for(const [k,l] of [['stock','Stocks & ADRs'],['all','Include ETFs & other']]){const o=el('option',l);o.value=k;o.selected=k===kinds;sel.append(o)}
- sel.onchange=()=>{kinds=sel.value;draw()};if(tab!=='funds')t.append(sel);
+ sel.onchange=()=>{kinds=sel.value;draw()};if(tab==='held'||tab==='moves')t.append(sel);
  $('note').textContent=(O.live?'Live view: only the '+O.live.reported+' of '+O.live.of+' top funds that have already filed '+O.quarter+' are included, each compared with its own previous quarter. It fills up as more funds report. ':'')+'Funds = how many of the '+O.cohort+' filers hold it. Active flow = net shares bought or sold beyond each fund\'s own proportional growth, at quarter-end prices. 13F lists long positions only, reported up to 45 days after quarter end.';
  draw()}
 async function status(){try{const s=await api('/api/smart-money/status');
@@ -605,7 +644,17 @@ function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c
  if(!rows.length){const tr=el('tr'),td=el('td','No trades in this window','mut');td.colSpan=cols.length;tr.append(td);tb.append(tr)}
  t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
 const tick=r=>{const d=el('td');d.append(tkLink(r.symbol));return d};
+const tick2=r=>{const d=el('td');d.append(tkLink(r.symbol));return d};
 function viewFor(){const base=[{l:'Ticker',r:tick},{l:'Company',f:r=>r.issuer}];
+ if(tab==='perf'&&!sym)return perfView('insiders',d=>{const p=d.performance,w=el('div');
+  const st=el('div',null,'stats');st.append(stat('Buys measured',String(p.n),'open market, $25k or more'),stat('Average return',fmtPct(p.avg_return_pct),'since each purchase price'),
+   stat('S&P 500',fmtPct(p.spy_pct),'over the same days'),stat('Winners',p.win_rate_pct==null?'-':p.win_rate_pct+'%','of purchases'));
+  const bw=cols=>rows=>table(cols,rows);const pc=r=>el('td',fmtPct(r.return_pct),'n '+pcls(r.return_pct));
+  const cols=[{l:'Ticker',r:tick2},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},{l:'Bought',f:r=>fdate(r.date)},{l:'Price',n:1,f:r=>'$'+r.price.toFixed(2)},{l:'Return',n:1,r:pc}];
+  const h=[{l:'Ticker',r:tick2},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},{l:'Shares held',n:1,f:r=>Math.round(r.shares).toLocaleString()},
+   {l:'Value now',n:1,f:r=>money(r.value)},{l:'Own buys',n:1,r:r=>el('td',fmtPct(r.buy_return_pct),'n '+pcls(r.buy_return_pct))}];
+  const sec=(t,x)=>{const c=el('section',null,'card');c.style.marginTop='1rem';c.append(el('h3',t),x);return c};
+  w.append(st,sec('Best purchases',table(cols,p.best)),sec('Worst purchases',table(cols,p.worst)),sec('Largest insider holdings (reported balance, today\'s price)',table(h,d.holdings)));return w});
  if(sym)return D.sym?table([{l:'Date',f:r=>fdate(r.date)},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},
   {l:'Side',r:r=>el('td',r.side.toUpperCase()+(r.plan?' (10b5-1)':''),side(r.side))},{l:'Shares',n:1,f:r=>Math.round(r.shares).toLocaleString()},
   {l:'Price',n:1,f:r=>'$'+r.price.toFixed(2)},{l:'Value',n:1,f:r=>money(r.value)}],D.sym.trades):el('div','Loading…','mut');
@@ -619,7 +668,7 @@ function draw(){if(!D)return;const o=D.o;
   stat('Trades',o.trades.toLocaleString(),'through '+fdate(o.as_of)),stat('Data',o.quarter,'SEC insider data set'));
  const t=$('tabs');t.replaceChildren();
  if(sym){const b=el('button','← all companies','btn');b.onclick=()=>{sym='';$('sq').value='';draw()};t.append(b,el('b','  '+sym+' · '+(D.sym?D.sym.quarter:''),'mut'))}
- else for(const [k,l] of [['buys','Top buys'],['sells','Top sells'],['clusters','Cluster buys']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;draw()};t.append(b)}
+ else for(const [k,l] of [['buys','Top buys'],['sells','Top sells'],['clusters','Cluster buys'],['perf','Performance']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;draw()};t.append(b)}
  const sel=el('select',null,'sel');for(const d of [7,30,90]){const op=el('option','Last '+d+' days');op.value=d;op.selected=d===days;sel.append(op)}
  sel.onchange=()=>{days=+sel.value;load()};
  const lab=el('label',null,'mut'),cb=el('input');cb.type='checkbox';cb.checked=!plans;cb.onchange=()=>{plans=!cb.checked;load()};lab.append(cb,document.createTextNode(' Hide 10b5-1 plan sales'));
@@ -726,6 +775,11 @@ function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c
  if(!rows.length){const tr=el('tr'),td=el('td','No trades match','mut');td.colSpan=cols.length;tr.append(td);tb.append(tr)}
  t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
 function viewFor(){
+ if(tab==='perf')return perfView('members',rows=>{const pc=k=>r=>el('td',fmtPct(r[k]),'n '+pcls(r[k]));
+  return table([{l:'Member',r:r=>{const d=el('td'),a=el('a',r.member);a.href='/political-trades?member='+encodeURIComponent(r.member);d.append(a);return d}},
+   {l:'Priced buys',n:1,f:r=>String(r.buys)},{l:'Est. volume',n:1,f:r=>money(r.est_volume)},{l:'Since trade',n:1,r:pc('return_since_trade_pct')},
+   {l:'S&P 500',n:1,r:pc('spy_since_trade_pct')},{l:'Since filing',n:1,r:pc('return_since_filing_pct')},{l:'S&P 500',n:1,r:pc('spy_since_filing_pct')},
+   {l:'Best buy',r:r=>{const d=el('td');d.append(tkLink(r.best_trade.ticker),document.createTextNode(' '+fmtPct(r.best_trade.return_pct)));return d}}],rows)});
  if(tab==='latest')return table([{l:'Traded',f:r=>fdate(r.date)},{l:'Member',r:r=>{const d=el('td'),a=el('a',r.member);a.href='/political-trades?member='+encodeURIComponent(r.member);d.append(a,document.createTextNode(' ('+r.state_dst+')'));return d}},
   {l:'Asset',r:r=>{const d=el('td');if(r.ticker){d.append(tkLink(r.ticker),document.createTextNode(' '))}d.append(document.createTextNode(r.asset));return d}},
   {l:'Type',r:r=>el('td',r.type+(r.owner?' ('+r.owner+')':''),kindc(r.type))},{l:'Amount',n:1,f:range},{l:'Reported',f:r=>fdate(r.filed)}],D.latest);
@@ -736,7 +790,7 @@ function viewFor(){
 function draw(){if(!D)return;
  $('stats').replaceChildren(stat('Reports',String(D.reports),'last '+D.days+' days'),stat('Trades',String(D.trades),'disclosed'),stat('Latest report',fdate(D.as_of),'House Clerk'),stat('Source','House','Periodic Transaction Reports'));
  const t=$('tabs');t.replaceChildren();
- for(const [k,l] of [['latest','Latest trades'],['bought','Most bought'],['sold','Most sold'],['members','Most active members']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;draw()};t.append(b)}
+ for(const [k,l] of [['latest','Latest trades'],['bought','Most bought'],['sold','Most sold'],['members','Most active members'],['perf','Performance']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;draw()};t.append(b)}
  const sel=el('select',null,'sel');for(const d of [30,90,180,365]){const o=el('option','Last '+d+' days');o.value=d;o.selected=d===days;sel.append(o)}sel.onchange=()=>{days=+sel.value;load()};
  const sd=el('select',null,'sel');for(const [k,l] of [['','All trades'],['buy','Purchases'],['sell','Sales']]){const o=el('option',l);o.value=k;o.selected=k===side;sd.append(o)}sd.onchange=()=>{side=sd.value;load()};
  const q1=el('input',null,'q');q1.placeholder='Ticker';q1.value=tk;q1.style.minWidth='90px';q1.onkeydown=e=>{if(e.key==='Enter'){tk=q1.value.trim().toUpperCase();load()}};

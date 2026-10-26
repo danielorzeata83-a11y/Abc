@@ -67,3 +67,16 @@ def test_investors_page_marks_current_vs_carried_and_shows_three_quarters(db, li
 def test_without_live_data_pages_keep_two_quarters(db):
     res = investors_page(db, CUSIP, "PEBO")
     assert len(res["quarters"]) == 2 and res["coverage"]["quarter"] == "Q2 2026"
+
+
+from sensa.holders import portfolio_for_cik
+
+
+def test_portfolio_of_a_filer_comes_from_its_latest_report_live_one_first(db, live):
+    p = portfolio_for_cik(db, "0000000001")
+    assert p["period"] == "2026-06-30" and p["name"] == "Alpha Fund" and p["filed"] == "2026-08-14"
+    assert [(x["cusip"], x["shares"], x["value"], x["issuer"]) for x in p["positions"]] == [(CUSIP, 15.0, 150.0, "PEOPLES BANCORP INC")]
+    q = portfolio_for_cik(db, "0000000001", live)
+    assert q["period"] == "2026-09-30" and q["filed"] == "2026-10-20" and q["positions"][0]["shares"] == 20.0
+    assert portfolio_for_cik(db, "0000000003", live)["period"] == "2026-06-30"       # Gamma has not reported Q3
+    assert portfolio_for_cik(db, "0000000042") is None

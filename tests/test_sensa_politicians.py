@@ -370,3 +370,11 @@ def test_a_multi_line_description_does_not_swallow_the_next_assets_name():
     a, b = parse_ptr(WRAPPED_DESC)["trades"]
     assert a["asset"] == "Pinterest, Inc. Class A Common Stock" and a["ticker"] == "PINS"
     assert b["asset"] == "US Treasury Note 01/31/27" and b["asset_type"] == "GS" and len(b["asset"]) < 60
+
+
+def test_service_exposes_trades_in_a_window_for_performance_work(tmp_path):
+    svc, _ = make_service(tmp_path)
+    svc.check()
+    t = svc.trades_since(days=90)
+    assert len(t) >= 5 and all("ticker" in x and "filed" in x for x in t)
+    assert svc.trades_since(days=0) == []

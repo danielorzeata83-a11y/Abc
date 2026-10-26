@@ -179,7 +179,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -289,6 +289,32 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._send(404, "not found", "text/plain")
                 else:
                     self._send(200, render_investors(parts[1].upper()), "text/html; charset=utf-8")
+                return
+            if len(parts) == 3 and parts[:2] == ["api", "portfolio"]:
+                if perf is None:
+                    self._json(503, {"error": "performance is not configured (set SEC_CONTACT)"})
+                elif not _CIK.match(parts[2]):
+                    self._json(400, {"error": "bad CIK"})
+                else:
+                    try:
+                        self._json(200, perf.portfolio.fund(f"{int(parts[2]):010d}"))
+                    except KeyError:
+                        self._json(404, {"error": "no 13F report found for that manager"})
+                    except DataUnavailable as e:
+                        self._json(503, {"error": str(e)})
+                return
+            if len(parts) == 3 and parts[:2] == ["api", "performance"]:
+                if perf is None:
+                    self._json(503, {"error": "performance is not configured (set SEC_CONTACT)"})
+                elif parts[2] not in perf.jobs:
+                    self._send(404, "not found", "text/plain")
+                else:
+                    job = perf.jobs[parts[2]]
+                    try:
+                        r = job.result()
+                        self._json(200, {"status": job.status(), "data": r["data"], "generated": r["generated"], "message": ""})
+                    except DataUnavailable as e:
+                        self._json(200, {"status": job.status(), "data": None, "generated": None, "message": str(e)})
                 return
             if u.path == "/api/live/status":
                 if live is None:
@@ -502,6 +528,13 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                 else:
                     self._json(200, {"started": insiders.start(force=bool(body.get("force")))})
                 return
+            pp = [x for x in route.split("/") if x]
+            if len(pp) == 4 and pp[:2] == ["api", "performance"] and pp[3] == "refresh":
+                if perf is None or pp[2] not in perf.jobs:
+                    self._json(503 if perf is None else 404, {"error": "unknown performance view"})
+                else:
+                    self._json(200, {"started": perf.jobs[pp[2]].start(force=bool(body.get("force")))})
+                return
             if route == "/api/smart-money/refresh":
                 if smart is None:
                     self._json(503, {"error": "Smart Money overview is not configured (set SEC_CONTACT)"})
@@ -529,8 +562,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors, live))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors, live, perf))
 
 
 def build_hub():
@@ -621,6 +654,31 @@ def build_live(smart, thirteenf):
                        on_update=rebuild_view)
 
 
+class Perf:
+    """Prices + the portfolio service and the three background leaderboards."""
+    def __init__(self, portfolio, jobs):
+        self.portfolio, self.jobs = portfolio, jobs
+
+
+def build_perf(smart, insiders, politicians):
+    if smart is None:
+        return None
+    from sensa.perf_service import PerfJob, PortfolioService, funds_board, insiders_board, members_board
+    from sensa.prices import PriceBook
+    from sensa.universe import load_overview
+    d = smart.data_dir
+    yc = YahooChart(http_fetch)
+    prices = PriceBook(lambda t: yc.candles(t, "1day"), cache_path=os.path.join(d, "prices.json"))
+    portfolio = PortfolioService(os.path.join(d, "holders.db"), os.path.join(d, "live13f.db"), smart.figi, prices)
+    jobs = {"funds": PerfJob("pricing the top funds' portfolios", lambda: funds_board(load_overview(d), portfolio),
+                             os.path.join(d, "perf_funds.json"))}
+    if politicians is not None:
+        jobs["members"] = PerfJob("pricing House trades", lambda: members_board(politicians, prices), os.path.join(d, "perf_members.json"))
+    if insiders is not None:
+        jobs["insiders"] = PerfJob("pricing insider trades", lambda: insiders_board(insiders, prices), os.path.join(d, "perf_insiders.json"))
+    return Perf(portfolio, jobs)
+
+
 def build_insiders(contact):
     """Quarterly SEC insider data set (Form 4 open-market trades)."""
     if not contact:
@@ -645,6 +703,16 @@ def _smart_loop(smart, hours, stop):
     while True:
         smart.start()                    # at launch, then every `hours`; no-op unless SEC published a newer quarter
         if stop.wait(hours * 3600):
+            break
+
+
+def _perf_loop(job, ok_hours, retry_minutes, stop):
+    """Run a leaderboard job, then wait: a few minutes after a failure (data not built yet), hours after a success."""
+    while True:
+        job.start()
+        job.wait()
+        failed = job.state().get("state") == "error"
+        if stop.wait(retry_minutes * 60 if failed else ok_hours * 3600):
             break
 
 
@@ -688,17 +756,22 @@ def main():
     live = build_live(smart, hub.thirteenf)
     insiders = build_insiders(os.environ.get("SEC_CONTACT", "").strip())
     politicians = build_politicians(os.environ.get("SEC_CONTACT", "").strip())
+    perf = build_perf(smart, insiders, politicians)
     if a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(politicians, a.smart_hours, threading.Event()), daemon=True).start()
     srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders,
-                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors, live=live)
+                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors, live=live, perf=perf)
     if insiders is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()
     if smart is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(smart, a.smart_hours, threading.Event()), daemon=True).start()
+    if perf is not None and a.smart_hours > 0:
+        import threading
+        for job in perf.jobs.values():                      # prices change daily: refresh every 6 hours
+            threading.Thread(target=_perf_loop, args=(job, 6, 10, threading.Event()), daemon=True).start()
     if live is not None and a.live_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(live, a.live_hours, threading.Event()), daemon=True).start()

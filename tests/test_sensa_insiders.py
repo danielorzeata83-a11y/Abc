@@ -200,3 +200,28 @@ def test_same_people_listed_in_a_different_order_are_one_insider_in_the_rankings
     assert {x["owner"] for x in t} == {"BERKSHIRE HATHAWAY INC / BUFFETT WARREN E"}
     a = aggregate(t, "2026-09-30", 30)
     assert len(a["top_buys"]) == 1 and a["top_buys"][0]["value"] == 200000.0 and a["top_buys"][0]["trades"] == 2
+
+
+def test_load_trades_records_the_balance_after_the_trade_from_direct_holding_lines_only():
+    head = TR_H + ["SHRSOWNFOLWNG", "DIRECT_INDIRECT_OWNERSHIP"]
+    sub = tsv(SUB_H, ["B1", "02-SEP-2026", "4", "1", "Acme Corp", "ACME", "0"])
+    own = tsv(OWN_H, ["B1", "Doe Jane", "Officer", "CFO"])
+    tr = tsv(head,
+             ["B1", "01-SEP-2026", "P", "100", "10", "A", "1100", "D"],
+             ["B1", "01-SEP-2026", "P", "50", "10", "A", "1150", "D"],               # later line, same day: final balance
+             ["B1", "01-SEP-2026", "S", "5", "10", "D", "999", "I"])                   # indirect holding: not the person's own balance
+    t = {x["side"]: x for x in load_trades(sub, own, tr)}
+    assert t["buy"]["owned_after"] == 1150.0 and t["sell"]["owned_after"] is None
+
+
+def test_load_trades_without_balance_columns_still_works():
+    t = load_trades(*sample())
+    assert all(x["owned_after"] is None for x in t)
+
+
+def test_service_exposes_recent_trades_for_performance_work(tmp_path):
+    svc = InsiderService(str(tmp_path), lambda: LISTING, downloader([]), min_value=0)
+    svc.start()
+    svc.wait(10)
+    t = svc.trades_since(days=30)
+    assert t and all(x["date"] >= "2026-08-07" for x in t) and svc.trades_since(days=0) == []

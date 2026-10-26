@@ -296,6 +296,14 @@ class PoliticiansService(BackgroundJob):
                 raise DataUnavailable("No congressional trade data yet. Press Update to read the House disclosure reports.") from None
         return self._data
 
+    def trades_since(self, days):
+        """Trades dated in the last `days` before the newest report (suspect dates left out)."""
+        d = self._load()
+        if days <= 0 or not d["as_of"]:
+            return []
+        start = (date.fromisoformat(d["as_of"]) - timedelta(days=days)).isoformat()
+        return [t for t in d["trades"] if t["date"] >= start and not t.get("suspect")]
+
     def overview(self, days=90, side=None, ticker=None, member=None, limit=100):
         d = self._load()
         start = (date.fromisoformat(d["as_of"]) - timedelta(days=days)).isoformat() if d["as_of"] else ""

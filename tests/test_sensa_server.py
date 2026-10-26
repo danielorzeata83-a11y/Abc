@@ -837,3 +837,109 @@ def test_stock_page_explains_missing_options_and_analyst_data_instead_of_showing
 def test_dashboard_symbol_row_does_not_reuse_the_ten_pixel_progress_bar_class():
     html = srv.render_index(["AAA"])
     assert 'class="symbar"' in html and '<div class="bar"><span class="mut">symbol' not in html
+
+
+class FakePerf:
+    class Job:
+        def __init__(self):
+            self.started = []
+
+        def status(self):
+            return {"state": "idle", "message": "", "generated": "t"}
+
+        def result(self):
+            return {"generated": "t", "data": [{"member": "Ann"}]}
+
+        def start(self, force=False):
+            self.started.append(force)
+            return True
+
+    class Portfolio:
+        def fund(self, cik):
+            if cik == "0000000042":
+                raise KeyError(cik)
+            if cik == "0000000043":
+                raise DataUnavailable("No investor index yet. Press Update")
+            return {"cik": cik, "name": "Alpha Fund", "return_since_filing_pct": 5.0}
+
+    def __init__(self):
+        self.jobs = {"funds": self.Job(), "members": self.Job(), "insiders": self.Job()}
+        self.portfolio = self.Portfolio()
+
+
+def _perf_req(method, path, perf="default", headers=None):
+    p = FakePerf() if perf == "default" else perf
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], perf=p)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        h = {"Content-Type": "application/json"} if method == "POST" else {}
+        h.update(headers or {})
+        c.request(method, path, body=b"{}" if method == "POST" else None, headers=h)
+        r = c.getresponse()
+        return r.status, r.read(), p
+    finally:
+        server.shutdown()
+
+
+def test_portfolio_and_performance_endpoints():
+    st, body, _ = _perf_req("GET", "/api/portfolio/0000000001")
+    assert st == 200 and json.loads(body)["return_since_filing_pct"] == 5.0
+    assert _perf_req("GET", "/api/portfolio/0000000042")[0] == 404
+    assert _perf_req("GET", "/api/portfolio/0000000043")[0] == 503
+    assert _perf_req("GET", "/api/portfolio/abc")[0] == 400
+    st, body, _ = _perf_req("GET", "/api/performance/members")
+    j = json.loads(body)
+    assert st == 200 and j["data"][0]["member"] == "Ann" and j["status"]["state"] == "idle" and j["generated"] == "t"
+    assert _perf_req("GET", "/api/performance/nope")[0] == 404
+    assert _perf_req("GET", "/api/performance/funds", perf=None)[0] == 503
+
+
+def test_performance_refresh_is_a_guarded_post():
+    st, body, p = _perf_req("POST", "/api/performance/funds/refresh")
+    assert st == 200 and p.jobs["funds"].started == [False]
+    assert _perf_req("POST", "/api/performance/funds/refresh", headers={"Content-Type": "text/plain"})[0] in (400, 415)
+    assert _perf_req("POST", "/api/performance/funds/refresh", headers={"Host": "evil.example.com"})[0] in (400, 403)
+
+
+def test_performance_not_ready_still_returns_the_status_so_the_page_can_show_progress():
+    class Cold(FakePerf.Job):
+        def result(self):
+            raise DataUnavailable("Performance numbers are not computed yet")
+    p = FakePerf()
+    p.jobs["funds"] = Cold()
+    st, body, _ = _perf_req("GET", "/api/performance/funds", perf=p)
+    j = json.loads(body)
+    assert st == 200 and j["data"] is None and "not computed" in j["message"]
+
+
+def test_perf_loop_retries_soon_after_a_failed_run_and_waits_long_after_a_good_one():
+    import threading
+    stop, waits, states = threading.Event(), [], iter(["error", "done", "done"])
+
+    class Job:
+        def start(self):
+            pass
+
+        def wait(self, timeout=None):
+            pass
+
+        def state(self):
+            return {"state": next(states)}
+
+    class Stop(threading.Event):
+        def wait(self, t=None):
+            waits.append(t)
+            return len(waits) >= 3
+    srv._perf_loop(Job(), ok_hours=6, retry_minutes=10, stop=Stop())
+    assert waits == [600, 6 * 3600, 6 * 3600]
+
+
+def test_pages_have_performance_views_wired_to_the_performance_api():
+    assert "perfView('funds'" in srv.render_smart_money() and "['perf','Performance']" in srv.render_smart_money()
+    assert "perfView('members'" in srv.render_political() and "['perf','Performance']" in srv.render_political()
+    assert "perfView('insiders'" in srv.render_insiders() and "['perf','Performance']" in srv.render_insiders()
+    m = srv.render_manager("0001609098")
+    assert "/api/portfolio/" in m and 'id="perf"' in m
+    for html in (srv.render_smart_money(), srv.render_political(), srv.render_insiders(), srv.render_manager("0001609098")):
+        assert "function perfView" in html

@@ -228,3 +228,27 @@ def has_holders(db_path, cusip):
         return con.execute("SELECT 1 FROM h WHERE cusip = ? AND q = 0 LIMIT 1", (cusip,)).fetchone() is not None
     finally:
         con.close()
+
+
+def portfolio_for_cik(db_path, cik, live_db=None):
+    """A filer's latest reported share positions: {name, period, filed, positions[{cusip, issuer, shares, value}]}."""
+    con = _connect(db_path)
+    try:
+        has_live = _attach_live(con, live_db)
+        if has_live:
+            f = con.execute("SELECT name, period, filed FROM lv.filers WHERE cik = ?", (cik,)).fetchone()
+            if f:
+                rows = con.execute("""SELECT h.cusip, COALESCE(i.issuer, h.issuer, ''), h.shares, h.value FROM lv.h h
+                                      LEFT JOIN main.iss i ON i.cusip = h.cusip WHERE h.cik = ? AND h.kind = 'SH'""", (cik,)).fetchall()
+                return {"cik": cik, "name": f[0], "period": f[1], "filed": f[2],
+                        "positions": [{"cusip": c, "issuer": n, "shares": s, "value": v} for c, n, s, v in rows]}
+        f = con.execute("SELECT name, filed FROM filers WHERE q = 0 AND cik = ?", (cik,)).fetchone()
+        if not f:
+            return None
+        period = dict(con.execute("SELECT key, value FROM meta").fetchall())["period"]
+        rows = con.execute("""SELECT h.cusip, COALESCE(i.issuer, ''), h.shares, h.value FROM h
+                              LEFT JOIN iss i ON i.cusip = h.cusip WHERE h.q = 0 AND h.cik = ? AND h.kind = 'SH'""", (cik,)).fetchall()
+        return {"cik": cik, "name": f[0], "period": period, "filed": f[1],
+                "positions": [{"cusip": c, "issuer": n, "shares": s, "value": v} for c, n, s, v in rows]}
+    finally:
+        con.close()
