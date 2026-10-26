@@ -88,21 +88,33 @@ class Cboe:
         return d.get("current_price"), out
 
 
-FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={ids}&cosd={since}"
 _FRED = [("DGS1MO", "1M"), ("DGS3MO", "3M"), ("DGS6MO", "6M"), ("DGS1", "1Y"),
          ("DGS2", "2Y"), ("DGS5", "5Y"), ("DGS10", "10Y"), ("DGS30", "30Y")]
-FRED_IDS = ",".join(i for i, _ in _FRED)
 
 
-def fred_curve(csv_text):
-    """FRED multi-series CSV -> latest row where every series has a value."""
-    rows = [r for r in csv.DictReader(io.StringIO(csv_text))
-            if all(r.get(i) not in (None, "", ".") for i, _ in _FRED if i in r)]
-    if not rows:
-        return None
-    last = max(rows, key=lambda r: r["observation_date"])
-    return {"date": last["observation_date"],
-            "points": [(lbl, float(last[i])) for i, lbl in _FRED if i in last]}
+class FredApi:
+    """Official FRED API (free key, FRED_API_KEY). The key rides in the query string
+    as FRED requires; errors strip the query so it never reaches logs or responses."""
+    BASE = "https://api.stlouisfed.org/fred/series/observations"
+
+    def __init__(self, key, fetch=http_fetch, series=_FRED):
+        self.key, self.fetch, self.series = key, fetch, series
+
+    def _latest(self, series_id):
+        qs = urlencode({"series_id": series_id, "api_key": self.key, "file_type": "json",
+                        "sort_order": "desc", "limit": 10})
+        obs = json.loads(self.fetch(f"{self.BASE}?{qs}", {}))["observations"]
+        return {o["date"]: float(o["value"]) for o in obs if o["value"] != "."}
+
+    def curve(self):
+        if not self.key:
+            raise DataUnavailable("FRED_API_KEY not set")
+        per = [(lbl, self._latest(sid)) for sid, lbl in self.series]
+        common = set.intersection(*(set(d) for _, d in per))
+        if not common:
+            return None
+        day = max(common)
+        return {"date": day, "points": [(lbl, d[day]) for lbl, d in per]}
 
 
 YAHOO_RSS = "https://feeds.finance.yahoo.com/rss/2.0/headline?s={sym}&region=US&lang=en-US"

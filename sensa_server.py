@@ -1,8 +1,8 @@
 """Own options-dashboard clone (stdlib http.server, zero new deps).
 
-Free, keyless data: Cboe delayed quotes (prices + full option chain with
-greeks -> C/P ratio and GEX), FRED (yield curve), Yahoo Finance RSS (news).
-Optional FINNHUB_API_KEY adds analyst consensus. Bind 127.0.0.1; reach
+Free data: Cboe delayed quotes (prices + full option chain with greeks -> C/P
+ratio and GEX), Yahoo Finance RSS (news), FRED API (yield curve, free key in
+FRED_API_KEY). Optional FINNHUB_API_KEY adds analyst consensus. Bind 127.0.0.1; reach
 remotely via an SSH tunnel.
 
     python sensa_server.py --watchlist AAPL,MSFT,NVDA,TSLA,AMZN,META,SPY,QQQ
@@ -14,14 +14,12 @@ import argparse
 import json
 import os
 import re
-from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from markov.data_providers import DataUnavailable
 from sensa.hub import Hub
-from sensa.providers import (Cboe, Finnhub, FRED_IDS, FRED_URL, YAHOO_RSS, fred_curve,
-                             http_fetch, yahoo_news)
+from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, yahoo_news
 
 DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
@@ -165,14 +163,11 @@ def make_server(hub, host, port, watchlist):
 def build_hub():
     key = os.environ.get("FINNHUB_API_KEY", "").strip()
 
-    def curve():
-        since = (date.today() - timedelta(days=21)).isoformat()
-        return fred_curve(http_fetch(FRED_URL.format(ids=FRED_IDS, since=since)))
-
     def news(symbol):
         return yahoo_news(http_fetch(YAHOO_RSS.format(sym=symbol or "SPY")))
 
-    return Hub(Cboe(), news, curve, analyst=Finnhub(key) if key else None)
+    fred = FredApi(os.environ.get("FRED_API_KEY", "").strip())
+    return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None)
 
 
 def main():
