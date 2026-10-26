@@ -57,7 +57,7 @@ class FakeTF:
         self.urls, self.covered, self.tabled = [], [], []
         self.periods, self.fail = periods or {}, set(fail)
 
-    def fetch(self, url):
+    def read(self, url):
         self.urls.append(url)
         if url.endswith("form.20261023.idx"):
             return IDX
@@ -143,3 +143,28 @@ def test_holdings_are_saved_per_filer(tmp_path):
     up.check()
     rows = store.holdings("0002049221")
     assert rows == [("037833100", "SH", 10.0, 1000.0)]
+
+
+def test_status_reports_state_and_how_many_reports_are_in(tmp_path):
+    up, store = updater(tmp_path, FakeTF())
+    assert up.status() == {"state": "idle", "message": "", "filers": 0, "period": None}
+    up.check()
+    assert up.status()["filers"] == 2 and up.status()["period"] == "2026-09-30"
+
+
+def test_when_every_daily_index_fails_the_run_reports_an_error_instead_of_looking_done(tmp_path):
+    class Down(FakeTF):
+        def read(self, url):
+            raise DataUnavailable("403")
+    up, _ = updater(tmp_path, Down())
+    with pytest.raises(DataUnavailable, match="EDGAR"):
+        up.check()
+
+
+def test_requests_are_spaced_to_respect_the_sec_rate_limit(tmp_path):
+    naps = []
+    tf = FakeTF()
+    store = LiveStore(str(tmp_path / "live.db"))
+    up = LiveUpdater(store, tf, lambda: "2026-06-30", today=lambda: date(2026, 10, 26), sleep=naps.append, min_interval=0.3)
+    up.check()
+    assert len(naps) >= len(tf.urls) - 1 and set(naps) == {0.3}

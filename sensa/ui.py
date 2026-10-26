@@ -740,7 +740,7 @@ _INV_CSS = r"""
 .sb{display:flex;gap:.5rem;margin:.6rem 0 1rem;flex-wrap:wrap}
 .tk{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.45rem .7rem;font:inherit;width:160px;text-transform:uppercase}
 .tag{font-size:.6rem;font-weight:700;letter-spacing:.05em;border-radius:5px;padding:.05rem .35rem;margin-left:.4rem;background:#0f2a52;color:#5aa2ff}
-.tag.pb{background:#3a2a0c;color:#ffb347}
+.tag.pb{background:#3a2a0c;color:#ffb347}.tag.nw{background:#0c3b2c;color:#22c58b}
 .ct{font-size:.65rem;font-weight:700;letter-spacing:.05em;border-radius:5px;padding:.1rem .4rem}
 .ct.NEW{background:#0c3b2c;color:#22c58b}.ct.INCREASED{background:#10305c;color:#5aa2ff}
 .ct.DECREASED{background:#4a3410;color:#ffb347}.ct.UNCHANGED,.ct.OPTIONS{background:#12233d;color:#8497b5}
@@ -781,7 +781,8 @@ function head(){const hr=$('hd');hr.replaceChildren();
   if(c.sort!==false)th.onclick=()=>{sortOrder=sortBy===c.k&&sortOrder==='desc'?'asc':'desc';if(sortBy!==c.k&&c.k==='name')sortOrder='asc';sortBy=c.k;page=1;load()};hr.append(th)}}
 function stat(k,v,d){const c=el('div',null,'card stat');c.append(el('div',k,'k'),el('div',v,'v'),el('div',d||'','d mut'));return c}
 function drawSummary(d){const s=d.summary;
- $('sub').textContent=d.coverage.quarter+' filings: '+s.filerCount+' institutions hold '+TICKER+' (vs previous quarter: '+s.newCount+' new, '+s.increasedCount+' added, '+s.decreasedCount+' reduced, '+s.soldOutCount+' sold out).';
+ const cv=d.coverage;
+ $('sub').textContent=(cv.carriedFrom?cv.currentFilers+' of '+s.filerCount+' institutions have already reported '+cv.quarter+' (read live from EDGAR); the other '+cv.carriedFilers+' are carried from '+cv.carriedFrom+' until their report arrives. ':'')+d.coverage.quarter+' filings: '+s.filerCount+' institutions hold '+TICKER+' (vs previous quarter: '+s.newCount+' new, '+s.increasedCount+' added, '+s.decreasedCount+' reduced, '+s.soldOutCount+' sold out).';
  $('stats').replaceChildren(
   stat('Institutions',num(s.filerCount),s.topFundCount+' top-100 funds · '+s.primeBrokerCount+' banks/prime brokers'),
   stat('Shares held',num(s.stockShares),s.heldPct==null?'share count unavailable':s.heldPct+'% of '+num(s.sharesOutstanding)+' outstanding'),
@@ -791,6 +792,7 @@ function drawSummary(d){const s=d.summary;
 function draw(d){head();const tb=$('rows');tb.replaceChildren();
  for(const r of d.data){const tr=el('tr'),n=el('td');
   if(/^[0-9]{1,10}$/.test(r.cik)){const a=el('a',r.name);a.href='/institutional-investor/manager/'+r.cik;n.append(a)}else n.textContent=r.name;
+  if(r.isCurrent)n.append(el('span','NEW REPORT','tag nw'));
   if(r.isTopFund)n.append(el('span','TOP FUND','tag'));if(r.isPrimeBroker)n.append(el('span','BANK','tag pb'));
   const mv=el('td'),ct=['NEW','INCREASED','DECREASED','UNCHANGED','OPTIONS'].includes(r.changeType)?r.changeType:'UNCHANGED';mv.append(el('span',ct,'ct '+ct));
   const cells=[n,el('td',num(r.shares),'n'),el('td',money(r.value),'n'),el('td',r.ownershipPct==null?'-':r.ownershipPct.toFixed(2)+'%','n'),
@@ -801,7 +803,7 @@ function draw(d){head();const tb=$('rows');tb.replaceChildren();
  const p=d.pagination;totalPages=p.totalPages;
  $('pg').textContent=p.total?((p.page-1)*p.limit+1)+' – '+Math.min(p.page*p.limit,p.total)+' of '+p.total:'No investors';
  $('prev').disabled=p.page<=1;$('next').disabled=p.page>=p.totalPages;
- $('note').textContent='Source: SEC Form 13F ('+d.coverage.quarter+'). Filed up to 45 days after quarter end, long positions only; options value is calls minus puts at reported underlying value. Ownership uses the latest share count reported to SEC.'}
+ $('note').textContent='Source: SEC Form 13F ('+d.coverage.quarter+(d.coverage.carriedFrom?', plus '+d.coverage.carriedFrom+' for filers that have not reported yet':'')+'). Filed up to 45 days after quarter end, long positions only; options value is calls minus puts at reported underlying value. Ownership uses the latest share count reported to SEC.'}
 async function load(){$('e').textContent='';
  try{const d=await api('/api/investors/'+encodeURIComponent(TICKER)+'?page='+page+'&limit='+LIMIT+'&sortBy='+sortBy+'&sortOrder='+sortOrder);
   document.title=TICKER+' institutional investors';drawSummary(d);draw(d)}

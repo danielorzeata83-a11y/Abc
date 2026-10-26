@@ -736,3 +736,24 @@ def test_the_update_loop_checks_immediately_at_launch_and_then_waits():
             stop.set()                       # the next wait returns at once, ending the loop
     srv._smart_loop(Job(), 24, stop)
     assert calls == [1]
+
+
+def test_live_status_endpoint_and_when_not_configured():
+    class Live:
+        def status(self):
+            return {"state": "idle", "message": "", "filers": 3, "period": "2026-09-30"}
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], live=Live())
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", "/api/live/status")
+        r = c.getresponse()
+        assert r.status == 200 and json.loads(r.read())["filers"] == 3
+    finally:
+        server.shutdown()
+    assert _inv("/api/live/status", investors=None)[0] == 503
+
+
+def test_investors_page_shows_which_reports_are_new_and_which_are_carried():
+    html = srv.render_investors("PEBO")
+    assert "isCurrent" in html and "carriedFilers" in html

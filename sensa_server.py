@@ -175,7 +175,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -275,6 +275,12 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._send(404, "not found", "text/plain")
                 else:
                     self._send(200, render_investors(parts[1].upper()), "text/html; charset=utf-8")
+                return
+            if u.path == "/api/live/status":
+                if live is None:
+                    self._json(503, {"error": "live 13F reading is not configured (set SEC_CONTACT)"})
+                else:
+                    self._json(200, live.status())
                 return
             if len(parts) == 3 and parts[:2] == ["api", "investors"]:
                 if investors is None:
@@ -505,8 +511,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors, live))
 
 
 def build_hub():
@@ -561,6 +567,18 @@ def build_investors(smart, contact):
     return InvestorService(smart.data_dir, smart.figi, lambda url: http_fetch(url, ua))
 
 
+def build_live(smart, thirteenf):
+    """Reads each new 13F report for the quarter the bulk data set does not cover yet, straight from EDGAR."""
+    if smart is None or thirteenf is None:
+        return None
+    from sensa.holders import meta
+    from sensa.live13f import LiveStore, LiveUpdater
+
+    def bulk_period():
+        return meta(os.path.join(smart.data_dir, "holders.db"))["period"]
+    return LiveUpdater(LiveStore(os.path.join(smart.data_dir, "live13f.db")), thirteenf, bulk_period)
+
+
 def build_insiders(contact):
     """Quarterly SEC insider data set (Form 4 open-market trades)."""
     if not contact:
@@ -613,6 +631,8 @@ def main():
     ap.add_argument("--watchlist", default=",".join(DEFAULT_WATCHLIST))
     ap.add_argument("--smart-hours", type=int, default=24,
                     help="how often to look for a newer 13F quarter for the Smart Money overview (0 = off)")
+    ap.add_argument("--live-hours", type=float, default=1.0,
+                    help="how often to read new 13F reports for the not-yet-published quarter from EDGAR (0 = off)")
     ap.add_argument("--watch-minutes", type=int, default=60,
                     help="how often to look for new 13F filings of followed funds (0 = off)")
     a = ap.parse_args()
@@ -623,19 +643,23 @@ def main():
     if smart is not None:
         hub.accession_lookup = smart.lookup_accession
     investors = build_investors(smart, os.environ.get("SEC_CONTACT", "").strip())
+    live = build_live(smart, hub.thirteenf)
     insiders = build_insiders(os.environ.get("SEC_CONTACT", "").strip())
     politicians = build_politicians(os.environ.get("SEC_CONTACT", "").strip())
     if a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(politicians, a.smart_hours, threading.Event()), daemon=True).start()
     srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders,
-                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors)
+                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors, live=live)
     if insiders is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()
     if smart is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(smart, a.smart_hours, threading.Event()), daemon=True).start()
+    if live is not None and a.live_hours > 0:
+        import threading
+        threading.Thread(target=_smart_loop, args=(live, a.live_hours, threading.Event()), daemon=True).start()
     if watcher is not None and a.watch_minutes > 0:
         import threading
         threading.Thread(target=_watch_loop, args=(watcher, a.watch_minutes, threading.Event()),

@@ -83,7 +83,8 @@ class ThirteenF:
             raise DataUnavailable("SEC_CONTACT not set (SEC requires a contact in the User-Agent)")
         return self.fetch(url, {"User-Agent": f"Abc-dashboard-research/1.0 {self.contact}"})
 
-    def fetch(self, url):
+    def read(self, url):
+        """Any SEC URL, sent with the contact User-Agent (self.fetch is the raw injected function)."""
         return self._get(url)
 
     def infotable(self, cik, accession, filed=None):

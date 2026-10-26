@@ -135,6 +135,10 @@ class LiveUpdater(BackgroundJob):
         self.store, self.tf, self.bulk_period = store, tf, bulk_period
         self.today, self._sleep, self.min_interval = today, sleep or time.sleep, min_interval
 
+    def status(self):
+        filers = self.store.filers()
+        return {**self.state(), "filers": len(filers), "period": max((f["period"] for f in filers), default=None)}
+
     def check(self, force=False):
         bulk = self.bulk_period()
         self.store.purge_through(bulk)
@@ -149,15 +153,20 @@ class LiveUpdater(BackgroundJob):
             if day.weekday() < 5 and (day.isoformat() not in done or day == today):
                 todo.append(day)
             day += timedelta(days=1)
-        filings = []
+        filings, failed = [], 0
         for d in todo:
             try:
-                text = self.tf.fetch(DAILY_INDEX.format(y=d.year, q=(d.month - 1) // 3 + 1, d=d.strftime("%Y%m%d")))
+                text = self.tf.read(DAILY_INDEX.format(y=d.year, q=(d.month - 1) // 3 + 1, d=d.strftime("%Y%m%d")))
             except DataUnavailable:
-                continue                              # a holiday has no file; retried next run (one cheap request)
+                failed += 1                           # a holiday has no file; retried next run (one cheap request)
+                self._sleep(self.min_interval)
+                continue
+            self._sleep(self.min_interval)
             filings.extend(f for f in parse_daily_index(text) if f["form"] == "13F-HR" and f["accession"] not in seen)
             if d != today:
                 self.store.mark_day(d.isoformat())
+        if todo and failed == len(todo):
+            raise DataUnavailable("EDGAR daily index is unavailable right now; will retry")
         added = 0
         for f in filings:
             try:

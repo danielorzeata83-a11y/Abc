@@ -355,4 +355,6 @@ def test_infotable_reads_detailed_rows_with_options_and_scales_old_values():
     tf = ThirteenF("me@example.com", fetch=F())
     assert tf.infotable("5", "0000000005-26-000001", "2026-10-01") == [("1", "A", "CALL", 2.0, 5.0)]
     assert tf.infotable("5", "0000000005-22-000001", "2022-10-01")[0][4] == 5000.0
-    assert tf.fetch("https://x/y") == xml
+    seen = []
+    tf2 = ThirteenF("me@example.com", fetch=lambda url, headers=None: seen.append(headers) or xml)
+    assert tf2.read("https://x/y") == xml and "me@example.com" in seen[0]["User-Agent"]   # SEC rejects the default agent
