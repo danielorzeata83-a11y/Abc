@@ -6,3 +6,4 @@ data/*.csv
 .env
 data/intraday/
 data/13f/
+data/watch/

@@ -28,7 +28,8 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 @media(max-width:700px){.nav{padding:.5rem .6rem;overflow-x:auto}.wrap{padding:.7rem}}
 """
 
-NAV_ITEMS = (("dash", "/", "Dashboard"), ("inst", "/institutional-investor", "Smart Money"))
+NAV_ITEMS = (("dash", "/", "Dashboard"), ("inst", "/institutional-investor", "Smart Money"),
+             ("alerts", "/smart-money/alerts", "Alerts"))
 
 
 def nav(active):
@@ -94,6 +95,7 @@ _MANAGER_BODY = r"""
   <div><span>CIK</span><b id="cikv">__CIK__</b></div>
   <div><span>Most recent</span><b id="recent">-</b></div>
   <div><span>SEC filings</span><a id="sec" target="_blank" rel="noopener noreferrer">View on sec.gov ↗</a></div>
+  <div><span>Alerts</span><button class="btn" id="follow" hidden>Follow</button></div>
  </div>
  <div id="msg" class="err"></div>
  <div class="stats" id="stats"></div>
@@ -196,8 +198,15 @@ for(const [lab,n] of [['3Y',12],['5Y',20],['10Y',40],['All',1000]]){const b=el('
 $('prev').onclick=()=>show(Math.max(0,offset-PAGE));$('next').onclick=()=>show(offset+PAGE);
 const loadingRow=()=>{const tr=el('tr'),td=el('td','Loading filings…','mut');td.colSpan=7;tr.append(td);$('rows').replaceChildren(tr);$('chart').replaceChildren(el('div','Loading…','mut'))};
 loadingRow();
+let followed=false;
+function drawFollow(){const b=$('follow');b.hidden=false;b.textContent=followed?'Following ✓':'Follow';b.classList.toggle('on',followed)}
+async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();
+ if(!r.ok)throw new Error(j.error||r.status);return j}
+fetch('/api/watch').then(r=>r.ok?r.json():null).then(w=>{if(!w)return;followed=w.following.some(f=>f.cik===CIK);drawFollow()}).catch(()=>{});
+$('follow').onclick=async()=>{try{await post('/api/watch/'+(followed?'unfollow':'follow'),{cik:CIK});followed=!followed;drawFollow()}catch(e){$('msg').textContent=e.message}};
 api('/api/manager/'+CIK).then(drawHeader).catch(e=>{$('name').textContent='Manager not available';$('msg').textContent=e.message});
 show(0);
+setInterval(()=>api('/api/manager/'+CIK).then(drawHeader).catch(()=>{}),600000);   // header stays current
 """
 
 
@@ -239,3 +248,65 @@ def render_institutional():
                     f'<a href="/institutional-investor/manager/{c}-{slug}">{name}</a> '
                     f'<span class="mut">CIK {c}</span></div>' for c, slug, name in EXAMPLES)
     return shell("Institutional investors", "inst", _INST_BODY.replace("__EXAMPLES__", items), _INST_JS)
+
+
+# ------------------------------------------------------------------ alerts page
+_ALERTS_CSS = r"""
+.ev{padding:.8rem 0;border-top:1px solid var(--line)}.ev:first-child{border-top:0}
+.ev .top{display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap}
+.ev .cnt span{margin-right:.9rem}.ev ul{margin:.4rem 0 0;padding-left:1.1rem;color:var(--mut);font-size:.82rem}
+.tag{font-size:.65rem;font-weight:700;letter-spacing:.05em;border-radius:5px;padding:.05rem .4rem;margin-right:.4rem}
+.tag.new{background:#0c3b2c;color:#22c58b}.tag.exited{background:#451a1a;color:#f0524f}
+.tag.increased{background:#10305c;color:#5aa2ff}.tag.reduced{background:#4a3410;color:#ffb347}
+.row{display:flex;justify-content:space-between;align-items:center;padding:.45rem 0;border-top:1px solid var(--line)}
+"""
+
+_ALERTS_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Smart Money alerts</h1>
+ <p class="mut">Follow funds and get a signal when they file a new 13F: positions added, removed, increased or reduced.
+ 13F reports are quarterly (due 45 days after quarter end), so a signal arrives when SEC publishes the filing.</p>
+ <div id="msg" class="err"></div>
+ <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1rem;align-items:start" id="g">
+  <section class="card"><h3>Following</h3>
+   <form id="f" style="display:flex;gap:.5rem;margin-bottom:.6rem">
+    <input id="cik" inputmode="numeric" placeholder="CIK" aria-label="CIK"
+     style="flex:1;min-width:0;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.45rem .6rem;font:inherit">
+    <button class="btn on" type="submit">Follow</button></form>
+   <div id="fl"></div>
+   <button class="btn" id="chk" style="margin-top:.8rem">Check now</button> <span id="st" class="mut"></span>
+  </section>
+  <section class="card"><h3>Recent signals</h3><div id="ev"></div></section>
+ </div>
+</div>
+"""
+
+_ALERTS_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const money=v=>Math.abs(v)>=1e9?'$'+(v/1e9).toFixed(2)+'B':Math.abs(v)>=1e6?'$'+(v/1e6).toFixed(1)+'M':'$'+Math.round(v).toLocaleString();
+async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined),j=await r.json();
+ if(!r.ok)throw new Error(j.error||r.status);return j}
+function draw(w){const fl=$('fl');fl.replaceChildren();
+ if(!w.following.length)fl.append(el('div','Not following any fund yet. Enter a CIK, e.g. 1067983 (Berkshire) or 1609098.','mut'));
+ for(const f of w.following){const r=el('div',null,'row'),a=el('a',f.name||f.cik);a.href='/institutional-investor/manager/'+f.cik;
+  const b=el('button','Unfollow','btn');b.onclick=async()=>{try{draw(await api('/api/watch/unfollow',{cik:f.cik}))}catch(e){$('msg').textContent=e.message}};r.append(a,b);fl.append(r)}
+ const ev=$('ev');ev.replaceChildren();
+ if(!w.events||!w.events.length)ev.append(el('div','No signals yet. They appear here when a followed fund files a new 13F.','mut'));
+ for(const e of (w.events||[])){const d=el('div',null,'ev'),top=el('div',null,'top'),a=el('a',e.name);a.href='/institutional-investor/manager/'+e.cik;
+  top.append(a,el('span',e.quarter+' · '+e.form+(e.amended?' (amended)':'')+' · filed '+e.filed,'mut'));
+  const c=el('div',null,'cnt');for(const k of ['new','exited','increased','reduced']){c.append(el('span',e.counts[k]+' '+k))}
+  const ul=el('ul');for(const ch of e.changes.slice(0,8)){const li=el('li');li.append(el('span',ch.type.toUpperCase(),'tag '+ch.type),
+    document.createTextNode(ch.ticker+' '+money(ch.type==='exited'?ch.value_prev:ch.value_now)+' ('+(ch.shares_now-ch.shares_prev>=0?'+':'')+Math.round(ch.shares_now-ch.shares_prev).toLocaleString()+' sh)'));ul.append(li)}
+  d.append(top,c,ul);ev.append(d)}}
+async function load(){try{draw(await api('/api/watch'));$('msg').textContent=''}catch(e){$('msg').textContent=e.message}}
+$('f').onsubmit=async e=>{e.preventDefault();const v=$('cik').value.trim().replace(/^0+/,'');
+ if(!/^[0-9]{1,10}$/.test(v)){$('msg').textContent='CIK must be 1-10 digits';return}
+ try{$('msg').textContent='';draw(Object.assign(await api('/api/watch/follow',{cik:v}),{events:(await api('/api/watch')).events}));$('cik').value=''}catch(er){$('msg').textContent=er.message}};
+$('chk').onclick=async()=>{$('st').textContent='checking…';try{const r=await api('/api/watch/check',{});$('st').textContent=r.new_events+' new signal(s)';load()}catch(e){$('st').textContent='';$('msg').textContent=e.message}};
+load();setInterval(load,60000);
+"""
+
+
+def render_alerts():
+    return shell("Smart Money alerts", "alerts", _ALERTS_BODY, _ALERTS_JS, _MANAGER_CSS + _ALERTS_CSS)

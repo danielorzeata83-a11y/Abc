@@ -23,7 +23,8 @@ from sensa.finra import Finra
 from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_post, yahoo_news
 from sensa.thirteenf import Figi, ThirteenF
-from sensa.ui import BASE_CSS, nav, render_institutional, render_manager
+from sensa.watch import Watcher
+from sensa.ui import BASE_CSS, nav, render_alerts, render_institutional, render_manager
 
 DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
@@ -162,7 +163,11 @@ def write_quietly(wfile, data):
         pass
 
 
-def _make_handler(hub, watchlist):
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+_MAX_BODY = 4096
+
+
+def _make_handler(hub, watchlist, watcher=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -190,6 +195,15 @@ def _make_handler(hub, watchlist):
                         self._send(200, fh.read(), "application/javascript")
                 except OSError:
                     self._send(404, "missing vendored JS", "text/plain")
+                return
+            if u.path.rstrip("/") == "/smart-money/alerts":
+                self._send(200, render_alerts(), "text/html; charset=utf-8")
+                return
+            if u.path == "/api/watch":
+                if watcher is None:
+                    self._json(503, {"error": "watching is not configured (set SEC_CONTACT)"})
+                else:
+                    self._json(200, {"following": watcher.following(), "events": watcher.events()})
                 return
             if u.path.rstrip("/") == "/institutional-investor":
                 self._send(200, render_institutional(), "text/html; charset=utf-8")
@@ -257,11 +271,53 @@ def _make_handler(hub, watchlist):
             except DataUnavailable as e:
                 self._json(503, {"error": str(e)})
 
+        def do_POST(self):
+            host = (self.headers.get("Host") or "").rsplit(":", 1)[0] if not (self.headers.get("Host") or "").startswith("[") \
+                else (self.headers.get("Host") or "").split("]")[0] + "]"
+            if host not in _LOCAL_HOSTS:                    # DNS-rebinding guard
+                self._json(403, {"error": "forbidden host"})
+                return
+            if not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+                self._json(415, {"error": "application/json required"})   # blocks cross-site form posts
+                return
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = -1
+            if n < 0 or n > _MAX_BODY:
+                self._json(413, {"error": "body too large"})
+                return
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+                if not isinstance(body, dict):
+                    raise ValueError
+            except ValueError:
+                self._json(400, {"error": "bad json"})
+                return
+            if watcher is None:
+                self._json(503, {"error": "watching is not configured (set SEC_CONTACT)"})
+                return
+            route = urlparse(self.path).path
+            try:
+                if route in ("/api/watch/follow", "/api/watch/unfollow"):
+                    cik = str(body.get("cik", "")).strip()
+                    if not _CIK.match(cik):
+                        self._json(400, {"error": "bad cik"})
+                        return
+                    (watcher.follow if route.endswith("/follow") else watcher.unfollow)(cik)
+                    self._json(200, {"following": watcher.following()})
+                elif route == "/api/watch/check":
+                    self._json(200, {"new_events": len(watcher.check())})
+                else:
+                    self._send(404, "not found", "text/plain")
+            except DataUnavailable as e:
+                self._json(503, {"error": str(e)})
+
     return Handler
 
 
-def make_server(hub, host, port, watchlist):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist)))
+def make_server(hub, host, port, watchlist, watcher=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher))
 
 
 def build_hub():
@@ -285,14 +341,45 @@ def build_hub():
                cache_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f"))
 
 
+def build_watcher(hub):
+    """Follow-list + signals. Needs SEC_CONTACT (same as the 13F pages). Telegram is optional."""
+    if hub.thirteenf is None:
+        return None
+    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+    chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    notify = None
+    if token and chat:
+        from markov.telegram import send_message
+        notify = lambda text: send_message(token, chat, text)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "watch", "watch.json")
+    return Watcher(hub.thirteenf, hub.figi, path, notify=notify)
+
+
+def _watch_loop(watcher, minutes, stop):
+    while not stop.wait(minutes * 60):
+        try:
+            for ev in watcher.check():
+                print(f"[signal] {ev['name']} {ev['quarter']}: {ev['counts']}", flush=True)
+        except Exception as e:           # never let the background thread die silently
+            print(f"[watch] check failed: {type(e).__name__}", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--watchlist", default=",".join(DEFAULT_WATCHLIST))
+    ap.add_argument("--watch-minutes", type=int, default=60,
+                    help="how often to look for new 13F filings of followed funds (0 = off)")
     a = ap.parse_args()
     wl = [s for s in a.watchlist.upper().split(",") if _SYM.match(s)]
-    srv = make_server(build_hub(), a.host, a.port, wl)
+    hub = build_hub()
+    watcher = build_watcher(hub)
+    srv = make_server(hub, a.host, a.port, wl, watcher=watcher)
+    if watcher is not None and a.watch_minutes > 0:
+        import threading
+        threading.Thread(target=_watch_loop, args=(watcher, a.watch_minutes, threading.Event()),
+                         daemon=True).start()
     print(f"http://{a.host}:{srv.server_address[1]}  ({DISCLAIMER})")
     srv.serve_forever()
 

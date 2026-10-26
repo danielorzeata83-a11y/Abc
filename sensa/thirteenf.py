@@ -129,3 +129,28 @@ class Figi:
                 pick = (us or data or [None])[0]
                 self._map[c] = pick.get("ticker") if pick else None
         return {c: self._map[c] for c in cusips if self._map.get(c)}
+
+
+def changes(current, previous):
+    """Position-level diff between two quarters (by CUSIP, judged on share count).
+    No previous filing -> no diff (a first filing is a baseline, not a signal)."""
+    if previous is None:
+        return []
+    prev = {r["cusip"]: r for r in previous}
+    cur = {r["cusip"]: r for r in current}
+    out = []
+
+    def row(kind, c, p):
+        return {"type": kind, "cusip": (c or p)["cusip"], "issuer": (c or p)["issuer"],
+                "shares_now": c["shares"] if c else 0.0, "shares_prev": p["shares"] if p else 0.0,
+                "value_now": c["value"] if c else 0.0, "value_prev": p["value"] if p else 0.0}
+    for cusip, c in cur.items():
+        p = prev.get(cusip)
+        if p is None:
+            out.append(row("new", c, None))
+        elif c["shares"] > p["shares"]:
+            out.append(row("increased", c, p))
+        elif c["shares"] < p["shares"]:
+            out.append(row("reduced", c, p))
+    out += [row("exited", None, p) for cusip, p in prev.items() if cusip not in cur]
+    return sorted(out, key=lambda r: max(r["value_now"], r["value_prev"]), reverse=True)

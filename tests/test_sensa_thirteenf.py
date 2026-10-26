@@ -155,3 +155,35 @@ def test_figi_falls_back_to_first_result_when_no_us_listing_exists():
     def post(url, payload):
         return json.dumps([{"data": [{"ticker": "ABC", "exchCode": "LN", "securityType": "Common Stock"}]}])
     assert Figi(post=post).lookup(["X"]) == {"X": "ABC"}
+
+
+from sensa.thirteenf import changes
+
+
+def _p(cusip, shares, value, issuer=None):
+    return {"cusip": cusip, "issuer": issuer or "ISS" + cusip, "shares": shares, "value": value}
+
+
+def test_changes_lists_each_new_exited_increased_and_reduced_position():
+    prev = [_p("1", 10, 100), _p("2", 10, 200), _p("3", 10, 50), _p("4", 10, 400)]
+    cur = [_p("1", 25, 250),      # increased
+           _p("2", 4, 80),        # reduced
+           _p("3", 10, 55),       # same shares: not a change (price moved only)
+           _p("9", 7, 700)]       # new ; "4" exited
+    out = changes(cur, prev)
+    by = {c["cusip"]: c for c in out}
+    assert set(by) == {"1", "2", "4", "9"}
+    assert by["9"]["type"] == "new" and by["9"]["shares_prev"] == 0 and by["9"]["shares_now"] == 7
+    assert by["4"]["type"] == "exited" and by["4"]["shares_now"] == 0 and by["4"]["value_prev"] == 400
+    assert by["1"]["type"] == "increased" and by["1"]["shares_now"] - by["1"]["shares_prev"] == 15
+    assert by["2"]["type"] == "reduced"
+
+
+def test_changes_sorted_by_size_of_the_position_involved():
+    prev = [_p("1", 10, 100), _p("4", 10, 400)]
+    cur = [_p("1", 20, 200), _p("9", 7, 700)]
+    assert [c["cusip"] for c in changes(cur, prev)] == ["9", "4", "1"]
+
+
+def test_changes_without_previous_filing_is_empty_not_all_new():
+    assert changes([_p("1", 1, 1)], None) == []

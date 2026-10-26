@@ -234,10 +234,104 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     if not node:
         import pytest
         pytest.skip("node not installed")
-    pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional()]
+    pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
             f.write_text(script)
             r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
             assert r.returncode == 0, (n, r.stderr)
+
+
+class FakeWatcher:
+    def __init__(self):
+        self.followed, self.checked = [], 0
+
+    def following(self):
+        return [{"cik": c, "name": "N"} for c in self.followed]
+
+    def events(self):
+        return [{"id": "e1", "name": "Test Capital LP", "counts": {"new": 1, "exited": 0, "increased": 0, "reduced": 0},
+                 "changes": [], "quarter": "Q2 2026", "form": "13F-HR", "filed": "2026-08-14",
+                 "accession": "A", "cik": "0000000001", "amended": False, "notified": True,
+                 "detected_at": "t"}]
+
+    def follow(self, cik, baseline=True):
+        if cik == "999":
+            raise DataUnavailable("sec down")
+        self.followed.append(f"{int(cik):010d}")
+
+    def unfollow(self, cik):
+        self.followed = [c for c in self.followed if c != f"{int(cik):010d}"]
+
+    def check(self):
+        self.checked += 1
+        return []
+
+
+def _req(method, path, body=None, headers=None, watcher=None):
+    w = watcher or FakeWatcher()
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], watcher=w)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        h = {"Content-Type": "application/json"} if method == "POST" else {}
+        h.update(headers or {})
+        c.request(method, path, body=json.dumps(body) if body is not None else None, headers=h)
+        r = c.getresponse()
+        return r.status, r.read(), w
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_watch_list_endpoint_returns_following_and_events():
+    st, body, _ = _req("GET", "/api/watch")
+    d = json.loads(body)
+    assert st == 200 and d["following"] == [] and d["events"][0]["name"] == "Test Capital LP"
+
+
+def test_follow_and_unfollow_via_post_normalise_the_cik():
+    st, body, w = _req("POST", "/api/watch/follow", {"cik": "1609098"})
+    assert st == 200 and w.followed == ["0001609098"]
+    w2 = FakeWatcher()
+    w2.followed = ["0001609098"]
+    st, _, w2 = _req("POST", "/api/watch/unfollow", {"cik": "1609098"}, watcher=w2)
+    assert st == 200 and w2.followed == []
+
+
+def test_follow_rejects_bad_cik_and_reports_sec_outage():
+    assert _req("POST", "/api/watch/follow", {"cik": "12ab"})[0] == 400
+    assert _req("POST", "/api/watch/follow", {})[0] == 400
+    st, body, _ = _req("POST", "/api/watch/follow", {"cik": "999"})
+    assert st == 503 and "sec down" in json.loads(body)["error"]
+
+
+def test_post_requires_json_content_type_and_local_host_header():
+    # a cross-site HTML form can only send form content types -> must be refused
+    st, _, w = _req("POST", "/api/watch/follow", {"cik": "1"}, headers={"Content-Type": "text/plain"})
+    assert st == 415 and w.followed == []
+    st, _, w = _req("POST", "/api/watch/follow", {"cik": "1"}, headers={"Host": "evil.example.com"})
+    assert st == 403 and w.followed == []         # DNS-rebinding guard
+
+
+def test_check_now_endpoint_runs_the_watcher_once():
+    st, body, w = _req("POST", "/api/watch/check", {})
+    assert st == 200 and w.checked == 1 and json.loads(body) == {"new_events": 0}
+
+
+def test_watch_endpoints_are_404_when_no_watcher_is_configured():
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", "/api/watch")
+        assert c.getresponse().status == 503
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_alerts_page_renders_for_the_shared_nav():
+    st, ct, body = _get_raw(FakeHub(), "/smart-money/alerts")
+    assert st == 200 and b"Alerts" in body and b"Smart Money" in body

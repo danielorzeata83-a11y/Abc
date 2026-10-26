@@ -30,6 +30,19 @@ top holdings, istoric filing-uri cu paginare, alocare, activitate vs trimestrul 
   Prima deschidere a unui manager e lentă (SEC răspunde în 1–4 s pe cerere; ~40 de cereri pentru 20 de filing-uri), apoi instant.
 - Nu există încă: alocarea pe sectoare, compararea a 2 trimestre, filtrele din tabel, logo-uri/fotografii.
 
+## Alerte Smart Money (`/smart-money/alerts`)
+Urmărești fonduri după CIK (buton **Follow** pe profilul fondului sau pe pagina de alerte). Când un fond depune un
+13F nou, aplicația compară cu trimestrul anterior și creează un **semnal**: poziții noi, ieșite, crescute, reduse
+(și amendamentele 13F-HR/A, comparate cu originalul aceleiași perioade). Semnalul apare în pagina de alerte și, dacă
+setezi `TELEGRAM_TOKEN` + `TELEGRAM_CHAT_ID` (vezi `TELEGRAM_SETUP.md`), vine și pe Telegram.
+- La prima urmărire istoricul e doar bază de comparație: nu primești alerte pentru filing-uri vechi.
+- Verificarea rulează în fundal la `--watch-minutes` (implicit 60) cât timp serverul e pornit, sau manual cu **Check now**.
+- Un filing care nu s-a putut descărca se reîncearcă; o notificare eșuată se retrimite; fără duplicate.
+- Starea (fonduri urmărite, filing-uri văzute, semnale) e în `data/watch/watch.json` (ignorat de git).
+- **13F e trimestrial** (termen: 45 de zile după încheierea trimestrului): semnalul vine când SEC publică filing-ul,
+  nu în timp real. Antetele profilului se reîmprospătează singure la 10 minute.
+- Cererile care modifică date (POST) cer `Content-Type: application/json` și Host local.
+
 ## Graficul candlestick
 - **1day** (implicit) merge cu cheia gratuită Alpha Vantage: `TIME_SERIES_DAILY` compact, ~100 sesiuni.
   Se ține 6 h în cache în memorie (cota gratuită e ~25 cereri/zi, 1/s); un eșec se reține 5 min.

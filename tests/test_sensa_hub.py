@@ -333,3 +333,15 @@ def test_disk_cache_rejects_path_traversal_in_identifiers(tmp_path):
         h._raw("../../etc", {"accession": "A1", "filed": "2026-01-01"})
     with pytest.raises(ValueError):
         h._raw("1", {"accession": "../x", "filed": "2026-01-01"})
+
+
+def test_fund_header_data_refreshes_after_ten_minutes_but_not_before():
+    f, t = Fake13F(), [0.0]
+    calls = []
+    orig = f.filer
+    f.filer = lambda cik: calls.append(1) or orig(cik)
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f, figi=FakeFigi(), clock=lambda: t[0])
+    hub.manager("1"); t[0] = 300.0; hub.manager("1")
+    assert len(calls) == 1
+    t[0] = 700.0; hub.manager("1")
+    assert len(calls) == 2

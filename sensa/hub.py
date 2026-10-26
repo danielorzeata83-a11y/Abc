@@ -144,7 +144,7 @@ class Hub:
     def _filer(self, cik):
         if self.thirteenf is None:
             raise DataUnavailable("13F not configured (set SEC_CONTACT)")
-        return self._cached(("filer", int(cik)), lambda: self.thirteenf.filer(cik), ttl=3600)
+        return self._cached(("filer", int(cik)), lambda: self.thirteenf.filer(cik), ttl=600)
 
     def manager(self, cik):
         f = self._filer(cik)
