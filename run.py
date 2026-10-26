@@ -42,19 +42,54 @@ def save_env_value(path, key, value):
         fh.write("\n".join(lines) + "\n")
 
 
+REQUIRED = ("numpy", "pandas")
+OPTIONAL = ("pypdf",)          # only the House trades page needs it
+
+
+def missing_modules(names, find=None):
+    import importlib.util
+    find = find or importlib.util.find_spec
+    return [n for n in names if find(n) is None]
+
+
+def plan(missing, pip_ok=None, offline_ok=None):
+    """What to do about missing packages: run as is, use the venv after a good pip, run without optional ones, or fail."""
+    if not missing:
+        return "run"
+    if pip_ok:
+        return "venv-ok"
+    return "run-without-optional" if all(m in OPTIONAL for m in missing) else "fail"
+
+
 def venv_python():
     return os.path.join(VENV, "Scripts" if os.name == "nt" else "bin", "python.exe" if os.name == "nt" else "python")
 
 
 def main(argv):
-    if os.path.abspath(sys.prefix) != os.path.abspath(VENV):
-        if not os.path.exists(venv_python()):
-            print("Creating virtual environment (first run only)...", flush=True)
-            subprocess.check_call([sys.executable, "-m", "venv", VENV])
-        print("Checking requirements...", flush=True)
-        subprocess.check_call([venv_python(), "-m", "pip", "install", "-q", "-r", os.path.join(HERE, "requirements.txt")])
-        os.execv(venv_python(), [venv_python(), os.path.join(HERE, "run.py"), *argv]) if os.name != "nt" else sys.exit(
-            subprocess.call([venv_python(), os.path.join(HERE, "run.py"), *argv]))
+    inside = os.path.abspath(sys.prefix) == os.path.abspath(VENV)
+    if not inside:
+        missing = missing_modules(REQUIRED + OPTIONAL)
+        if not missing:
+            pass                                               # this Python already has everything: no venv, no download
+        else:
+            print("Missing packages: " + ", ".join(missing) + ". Trying to install them in .venv ...", flush=True)
+            try:
+                if not os.path.exists(venv_python()):
+                    subprocess.check_call([sys.executable, "-m", "venv", VENV])
+                subprocess.check_call([venv_python(), "-m", "pip", "install", "-q", "-r", os.path.join(HERE, "requirements.txt")])
+                ok = True
+            except (subprocess.CalledProcessError, OSError):
+                ok = False
+            what = plan(missing, pip_ok=ok)
+            if what == "venv-ok":
+                if os.name != "nt":
+                    os.execv(venv_python(), [venv_python(), os.path.join(HERE, "run.py"), *argv])
+                sys.exit(subprocess.call([venv_python(), os.path.join(HERE, "run.py"), *argv]))
+            if what == "fail":
+                sys.exit("Could not install " + ", ".join(m for m in missing if m in REQUIRED) +
+                         " (no internet to PyPI?). Install them once with:  pip install numpy pandas   "
+                         "(on a computer with internet, or ask IT for a proxy), then run again.")
+            print("Optional package(s) missing (" + ", ".join(missing) + "): the House trades page will not read PDFs. Continuing.", flush=True)
     load_env(ENV_FILE)
     if not os.environ.get("SEC_CONTACT"):
         print("SEC requires a contact e-mail in requests (used for the free SEC data). It stays on this computer.")

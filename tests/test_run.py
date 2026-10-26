@@ -22,3 +22,16 @@ def test_save_env_value_appends_and_replaces(tmp_path):
     run.save_env_value(str(f), "FRED_API_KEY", "k")
     run.save_env_value(str(f), "SEC_CONTACT", "c@d.co")
     assert f.read_text().splitlines() == ["SEC_CONTACT=c@d.co", "FRED_API_KEY=k"]
+
+
+def test_missing_modules_lists_only_what_cannot_be_imported():
+    found = {"numpy": object(), "pandas": object()}
+    assert run.missing_modules(("numpy", "pandas", "pypdf"), find=lambda n: found.get(n)) == ["pypdf"]
+    assert run.missing_modules(("numpy",), find=lambda n: object()) == []
+
+
+def test_plan_uses_the_current_python_when_everything_is_installed_and_survives_an_offline_pip():
+    assert run.plan(missing=[], offline_ok=False) == "run"
+    assert run.plan(missing=["numpy"], pip_ok=True) == "venv-ok"
+    assert run.plan(missing=["pypdf"], pip_ok=False) == "run-without-optional"
+    assert run.plan(missing=["numpy", "pypdf"], pip_ok=False) == "fail"
