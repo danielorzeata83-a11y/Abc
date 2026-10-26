@@ -46,7 +46,7 @@ class FakeOpenFigi:
 def make(db, tmp_path, post=None, cache=True):
     post = post or FakeOpenFigi()
     figi = Figi(post, cache_path=str(tmp_path / "figi.json"))
-    return TickerResolver(db, post, figi, cache_path=str(tmp_path / "tickers.json") if cache else None), post
+    return TickerResolver(db, figi, cache_path=str(tmp_path / "tickers.json") if cache else None), post
 
 
 def test_a_ticker_is_resolved_through_its_name_and_confirmed_by_the_reverse_lookup(db, tmp_path):
@@ -82,7 +82,7 @@ def test_a_ticker_already_in_the_cusip_cache_needs_no_name_lookup(db, tmp_path):
     figi = Figi(post, cache_path=str(tmp_path / "figi.json"))
     figi.info(["037833100"])
     n = len(post.calls)
-    r = TickerResolver(db, post, figi)
+    r = TickerResolver(db, figi)
     assert r.cusip("AAPL") == "037833100" and len(post.calls) == n
 
 
@@ -90,5 +90,5 @@ def test_found_tickers_are_remembered_on_disk(db, tmp_path):
     r, _ = make(db, tmp_path)
     r.cusip("PEBO")
     boom = lambda *a, **k: (_ for _ in ()).throw(AssertionError("network"))
-    again = TickerResolver(db, boom, Figi(boom), cache_path=str(tmp_path / "tickers.json"))
+    again = TickerResolver(db, Figi(boom), cache_path=str(tmp_path / "tickers.json"))
     assert again.cusip("PEBO") == "709789101"

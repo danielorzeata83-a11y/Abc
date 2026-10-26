@@ -232,6 +232,12 @@ _INST_BODY = r"""
    style="flex:1;min-width:180px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;font:inherit">
   <button class="btn on" type="submit">Open</button><span id="e" class="err"></span>
  </form>
+ <form id="tkf" class="card" style="display:flex;gap:.6rem;flex-wrap:wrap;margin:0 0 1rem;align-items:center">
+  <b>Who holds a stock?</b>
+  <input id="tk" placeholder="Ticker, e.g. AAPL" maxlength="10" aria-label="Ticker"
+   style="flex:1;min-width:160px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;font:inherit;text-transform:uppercase">
+  <button class="btn on" type="submit">Investors</button><span id="te" class="err"></span>
+ </form>
  <section class="card"><h3>Browse</h3><p style="margin:.2rem 0 .8rem"><a href="/institutional-investor/latest-filings">Latest 13F filings →</a></p>
   <div class="letters">__LETTERS__</div></section>
  <section class="card" style="margin-top:1rem"><h3>Examples</h3>__EXAMPLES__</section>
@@ -243,6 +249,9 @@ document.getElementById('f').onsubmit=e=>{e.preventDefault();
  const v=document.getElementById('cik').value.trim().replace(/^0+/,'');
  if(!/^[0-9]{1,10}$/.test(v)){document.getElementById('e').textContent='CIK must be 1-10 digits';return}
  location.href='/institutional-investor/manager/'+v.padStart(10,'0')};
+document.getElementById('tkf').onsubmit=e=>{e.preventDefault();const v=document.getElementById('tk').value.trim().toUpperCase();
+ if(!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(v)){document.getElementById('te').textContent='Enter a ticker, e.g. AAPL';return}
+ location.href='/stock/'+encodeURIComponent(v)+'/investors'};
 """
 
 
@@ -366,7 +375,8 @@ function table(cols,rows,defKey){const t=el('table',null,'t'),thead=el('thead'),
  t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
 const cell=(txt,c)=>el('td',txt,c);
 function heldView(){const rows=O.stocks.filter(s=>okKind(s)&&!s.gone);
- const cols=[{k:'ticker',l:'Ticker',dir:1,r:s=>{const d=el('td');d.append(el('b',s.ticker));return d}},
+ const cols=[{k:'ticker',l:'Ticker',dir:1,r:s=>{const d=el('td');
+   if(/^[A-Z][A-Z0-9.\-]{0,9}$/.test(s.ticker)){const a=el('a',s.ticker);a.href='/stock/'+encodeURIComponent(s.ticker)+'/investors';a.style.fontWeight='700';d.append(a)}else d.append(el('b',s.ticker));return d}},
   {k:'issuer',l:'Company',dir:1,f:s=>s.issuer},
   {k:'holders',l:'Funds',n:1,r:s=>cell(s.holders+' / '+O.cohort)},
   {k:'dh',l:'vs last Q',n:1,v:s=>s.holders-s.holders_prev,r:s=>cell((s.holders-s.holders_prev>0?'+':'')+(s.holders-s.holders_prev),cls(s.holders-s.holders_prev))},
@@ -723,3 +733,90 @@ load();poll();
 
 def render_political():
     return shell("Political trades", "political", _POL_BODY, _COMMON_JS + _POL_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)
+
+
+# ------------------------------------------------------- investors holding one stock
+_INV_CSS = r"""
+.sb{display:flex;gap:.5rem;margin:.6rem 0 1rem;flex-wrap:wrap}
+.tk{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.45rem .7rem;font:inherit;width:160px;text-transform:uppercase}
+.tag{font-size:.6rem;font-weight:700;letter-spacing:.05em;border-radius:5px;padding:.05rem .35rem;margin-left:.4rem;background:#0f2a52;color:#5aa2ff}
+.tag.pb{background:#3a2a0c;color:#ffb347}
+.ct{font-size:.65rem;font-weight:700;letter-spacing:.05em;border-radius:5px;padding:.1rem .4rem}
+.ct.NEW{background:#0c3b2c;color:#22c58b}.ct.INCREASED{background:#10305c;color:#5aa2ff}
+.ct.DECREASED{background:#4a3410;color:#ffb347}.ct.UNCHANGED,.ct.OPTIONS{background:#12233d;color:#8497b5}
+th.s{cursor:pointer;user-select:none}th.s:hover{color:var(--fg)}
+.note{color:var(--mut);font-size:.78rem;margin-top:.7rem}
+"""
+
+_INV_BODY = r"""
+<div class="wrap">
+ <div class="crumb"><a href="/institutional-investor">Institutional</a> &nbsp;›&nbsp; <b>__TICKER__ investors</b></div>
+ <h1 class="title" style="font-size:2rem">__TICKER__ institutional investors</h1>
+ <p class="mut" id="sub">Who holds this stock, from Form 13F filings.</p>
+ <form id="f" class="sb"><input id="tk" class="tk" placeholder="Ticker" maxlength="10" aria-label="Ticker">
+  <button class="btn on" type="submit">Open</button><span id="e" class="err"></span></form>
+ <div class="stats" id="stats"></div>
+ <section class="card"><div class="head"><h3>Investors <span class="chip" id="cnt"></span></h3></div>
+  <div class="tbl"><table class="t"><thead><tr id="hd"></tr></thead><tbody id="rows"></tbody></table></div>
+  <div class="pager"><span id="pg"></span><span><button class="btn" id="prev">‹</button> <button class="btn" id="next">›</button></span></div>
+  <p class="note" id="note"></p></section>
+</div>
+"""
+
+_INV_JS = r"""
+const TICKER="__TICKER__",LIMIT=20,$=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const money=v=>{if(v==null)return '-';const a=Math.abs(v),s=a>=1e12?'$'+(a/1e12).toFixed(2)+'T':a>=1e9?'$'+(a/1e9).toFixed(2)+'B':a>=1e6?'$'+(a/1e6).toFixed(2)+'M':'$'+Math.round(a).toLocaleString();return (v<0?'-':'')+s};
+const num=v=>v==null?'-':Math.round(v).toLocaleString();
+const sgn=v=>(v>0?'+':'')+num(v);
+const cls=v=>v>0?'up':v<0?'dn':'mut';
+const fdate=d=>d?new Date(d+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}):'-';
+async function api(p){const r=await fetch(p),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+let page=1,sortBy='value',sortOrder='desc',totalPages=1;
+const COLS=[{k:'name',l:'Investor'},{k:'shares',l:'Shares',n:1},{k:'value',l:'Value',n:1},{k:'ownershipPct',l:'Owns',n:1},
+ {k:'prevShares',l:'Prev. shares',n:1},{k:'shareChange',l:'Change',n:1},{k:'shareChangePct',l:'Change %',n:1},
+ {k:'changeType',l:'Move',sort:false},{k:'optionsValue',l:'Options (net)',n:1},{k:'filed',l:'Filed'}];
+function head(){const hr=$('hd');hr.replaceChildren();
+ for(const c of COLS){const th=el('th',c.l+(c.k===sortBy?(sortOrder==='desc'?' ▾':' ▴'):''),(c.n?'n ':'')+(c.sort===false?'':'s'));
+  if(c.sort!==false)th.onclick=()=>{sortOrder=sortBy===c.k&&sortOrder==='desc'?'asc':'desc';if(sortBy!==c.k&&c.k==='name')sortOrder='asc';sortBy=c.k;page=1;load()};hr.append(th)}}
+function stat(k,v,d){const c=el('div',null,'card stat');c.append(el('div',k,'k'),el('div',v,'v'),el('div',d||'','d mut'));return c}
+function drawSummary(d){const s=d.summary;
+ $('sub').textContent=d.coverage.quarter+' filings: '+s.filerCount+' institutions hold '+TICKER+' (vs previous quarter: '+s.newCount+' new, '+s.increasedCount+' added, '+s.decreasedCount+' reduced, '+s.soldOutCount+' sold out).';
+ $('stats').replaceChildren(
+  stat('Institutions',num(s.filerCount),s.topFundCount+' top-100 funds · '+s.primeBrokerCount+' banks/prime brokers'),
+  stat('Shares held',num(s.stockShares),s.heldPct==null?'share count unavailable':s.heldPct+'% of '+num(s.sharesOutstanding)+' outstanding'),
+  stat('Value held',money(s.stockValue),'stock only'),
+  stat('Options (net)',money(s.optionsValue),'calls '+money(s.callValue)+' · puts '+money(s.putValue)+' · '+s.filersWithOptions+' filers'));
+ $('cnt').textContent=String(s.filerCount)}
+function draw(d){head();const tb=$('rows');tb.replaceChildren();
+ for(const r of d.data){const tr=el('tr'),n=el('td');
+  if(/^[0-9]{1,10}$/.test(r.cik)){const a=el('a',r.name);a.href='/institutional-investor/manager/'+r.cik;n.append(a)}else n.textContent=r.name;
+  if(r.isTopFund)n.append(el('span','TOP FUND','tag'));if(r.isPrimeBroker)n.append(el('span','BANK','tag pb'));
+  const mv=el('td'),ct=['NEW','INCREASED','DECREASED','UNCHANGED','OPTIONS'].includes(r.changeType)?r.changeType:'UNCHANGED';mv.append(el('span',ct,'ct '+ct));
+  const cells=[n,el('td',num(r.shares),'n'),el('td',money(r.value),'n'),el('td',r.ownershipPct==null?'-':r.ownershipPct.toFixed(2)+'%','n'),
+   el('td',num(r.prevShares),'n'),el('td',sgn(r.shareChange),'n '+cls(r.shareChange)),
+   el('td',r.shareChangePct==null?'-':(r.shareChangePct>0?'+':'')+r.shareChangePct.toFixed(1)+'%','n '+cls(r.shareChangePct)),mv,
+   el('td',r.optionPositions?money(r.optionsValue):'-','n'),el('td',fdate(r.filed))];
+  tr.append(...cells);tb.append(tr)}
+ const p=d.pagination;totalPages=p.totalPages;
+ $('pg').textContent=p.total?((p.page-1)*p.limit+1)+' – '+Math.min(p.page*p.limit,p.total)+' of '+p.total:'No investors';
+ $('prev').disabled=p.page<=1;$('next').disabled=p.page>=p.totalPages;
+ $('note').textContent='Source: SEC Form 13F ('+d.coverage.quarter+'). Filed up to 45 days after quarter end, long positions only; options value is calls minus puts at reported underlying value. Ownership uses the latest share count reported to SEC.'}
+async function load(){$('e').textContent='';
+ try{const d=await api('/api/investors/'+encodeURIComponent(TICKER)+'?page='+page+'&limit='+LIMIT+'&sortBy='+sortBy+'&sortOrder='+sortOrder);
+  document.title=TICKER+' institutional investors';drawSummary(d);draw(d)}
+ catch(e){head();$('e').textContent=e.message}}
+$('prev').onclick=()=>{if(page>1){page--;load()}};$('next').onclick=()=>{if(page<totalPages){page++;load()}};
+$('f').onsubmit=e=>{e.preventDefault();const v=$('tk').value.trim().toUpperCase();
+ if(!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(v)){$('e').textContent='Enter a ticker, e.g. AAPL';return}
+ location.href='/stock/'+encodeURIComponent(v)+'/investors'};
+head();load();
+"""
+
+
+def render_investors(ticker):
+    import re
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", ticker):
+        raise ValueError("bad ticker")
+    return shell(f"{ticker} institutional investors", "inst", _INV_BODY.replace("__TICKER__", ticker),
+                 _INV_JS.replace("__TICKER__", ticker), _MANAGER_CSS + _LIST_CSS + _INV_CSS)

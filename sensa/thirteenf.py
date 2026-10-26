@@ -202,18 +202,26 @@ class Figi:
         with self._lock:                                  # one request at a time, spaced for the free rate limit
             return self._info(cusips)
 
+    def request(self, payload):
+        """One OpenFIGI mapping call, spaced and serialised with every other call (free rate limit)."""
+        with self._lock:
+            return self._post_spaced(payload)
+
+    def _post_spaced(self, payload):
+        if self.min_interval and self._last is not None:
+            wait = self.min_interval - (self._clock() - self._last)
+            if wait > 0:
+                self._sleep(wait)
+        try:
+            return json.loads(self.post(self.URL, payload))
+        finally:
+            self._last = self._clock()
+
     def _info(self, cusips):
         todo = [c for c in dict.fromkeys(cusips) if c not in self._map]
         for i in range(0, len(todo), 10):
-            if self.min_interval and self._last is not None:
-                wait = self.min_interval - (self._clock() - self._last)
-                if wait > 0:
-                    self._sleep(wait)
             batch = todo[i:i + 10]
-            try:
-                res = json.loads(self.post(self.URL, [{"idType": "ID_CUSIP", "idValue": c} for c in batch]))
-            finally:
-                self._last = self._clock()
+            res = self._post_spaced([{"idType": "ID_CUSIP", "idValue": c} for c in batch])
             for c, r in zip(batch, res):
                 data = r.get("data") or []
                 stocks = [d for d in data if d.get("securityType") == "Common Stock"] or data

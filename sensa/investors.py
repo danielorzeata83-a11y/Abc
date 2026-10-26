@@ -113,13 +113,13 @@ class UnknownTicker(Exception):
 
 
 class InvestorService:
-    def __init__(self, data_dir, figi, post, fetch_sec):
+    def __init__(self, data_dir, figi, fetch_sec):
         import os
         from sensa.shares_out import SharesOutstanding
         from sensa.tickers import TickerResolver
         self.data_dir = data_dir
         self.db = os.path.join(data_dir, "holders.db")
-        self.resolver = TickerResolver(self.db, post, figi, cache_path=os.path.join(data_dir, "tickers.json"))
+        self.resolver = TickerResolver(self.db, figi, cache_path=os.path.join(data_dir, "tickers.json"))
         self.shares_out = SharesOutstanding(fetch_sec, os.path.join(data_dir, "shares_out.json"))
 
     def _top_ciks(self):

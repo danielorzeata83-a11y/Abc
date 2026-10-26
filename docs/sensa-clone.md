@@ -56,6 +56,24 @@ Ce înseamnă cifrele (și ce corectez, ca să nu inducă în eroare):
   fond (ex. +93%) pot veni din schimbarea structurii depunerii (entități combinate), nu din piață. Amendamentele care doar adaugă
   poziții nu sunt incluse.
 
+## Cine deține o acțiune (`/stock/<TICKER>/investors`)
+Echivalentul listei „institutional investors" din original (`/api/v1/top-investors/by-ticker/<T>/holdings`).
+Pagina: `/stock/PEBO/investors`; API: `/api/investors/PEBO?page=1&limit=20&sortBy=value&sortOrder=desc`
+(17 chei de sortare, `limit` max 200, valorile lipsă sunt mereu la coadă).
+- **Sursa:** aceleași arhive SEC „Form 13F data sets" folosite la Smart Money. Butonul **Update** construiește în plus
+  `holders.db` (SQLite, ~200 MB, ignorat de git) cu pozițiile tuturor filer-ilor din ultimele două trimestre
+  (~3,4 M rânduri, ~90 s). Un build eșuat nu înlocuiește indexul bun.
+- **Ticker → CUSIP:** OpenFIGI dă numele emitentului, numele se caută în index, iar candidații sunt confirmați prin
+  căutarea inversă CUSIP → ticker (cache în `tickers.json`). Fără confirmare, rezultatul este „unknown ticker".
+- **Acțiuni în circulație** (pentru `ownershipPct`): SEC `company_tickers.json` + XBRL `dei:EntityCommonStockSharesOutstanding`.
+  Companiile cu mai multe clase de acțiuni raportează un număr per clasă, deci procentul lipsește (`null`) în loc să fie greșit.
+- **Câmpuri:** shares/value/ownership, `prevShares`, `shareChange(Pct)`, `changeType` (NEW / INCREASED / DECREASED / UNCHANGED / OPTIONS),
+  opțiuni call/put (valoarea „net" = call − put, ca în original), `history` pe cele două trimestre, `soldOutCount` în sumar.
+- **Verificat pe date reale (Q2 2026, PEBO):** 223 filer-i; call/put/net exact ca în original (472.443 / 410.987 / 61.456).
+- **Diferențe față de original:** doar ultimele 2 trimestre (nu 5); „top fund" = primele 100 fonduri după valoarea raportată
+  (lista lor e curatoriată), „bank" = lista editabilă `PRIME_BROKER_PATTERNS` din `sensa/investors.py`;
+  fără suprapunerea Q3 în curs („current vs carried").
+
 ## Paginile instituționale (după structura originalului)
 - `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
 - `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru

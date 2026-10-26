@@ -110,7 +110,7 @@ def service(tmp_path, fetch=None):
         if "company_tickers" in url:
             return _json.dumps({"0": {"cik_str": 5, "ticker": "PEBO", "title": "x"}})
         return _json.dumps({"units": {"shares": [{"end": "2026-06-30", "val": 1000, "filed": "2026-08-01"}]}})
-    return InvestorService(str(tmp_path), Figi(post), post, fetch or sec)
+    return InvestorService(str(tmp_path), Figi(post), fetch or sec)
 
 
 def test_service_resolves_the_ticker_and_adds_ownership_and_top_fund_flags(db, tmp_path):

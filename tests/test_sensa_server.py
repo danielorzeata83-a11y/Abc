@@ -237,7 +237,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
              srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
-             srv.render_political()]
+             srv.render_political(), srv.render_investors("PEBO")]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -665,3 +665,62 @@ def test_political_endpoints_503_when_off_or_not_built():
             raise DataUnavailable("No congressional trade data yet. Press Update")
     st, body, _ = _pol("GET", "/api/political-trades", pol=Empty())
     assert st == 503 and "Press Update" in json.loads(body)["error"]
+
+
+class FakeInvestors:
+    def __init__(self):
+        self.calls = []
+
+    def lookup(self, ticker, **kw):
+        from sensa.investors import UnknownTicker
+        self.calls.append((ticker, kw))
+        if ticker == "ZZZZ":
+            raise UnknownTicker("No 13F holders found for ZZZZ")
+        if ticker == "DOWN":
+            raise DataUnavailable("No investor index yet. Press Update")
+        if kw.get("sort_by") == "bad":
+            raise ValueError("sortBy must be one of value")
+        return {"summary": {"ticker": ticker, "filerCount": 3}, "data": [], "pagination": {"page": kw["page"]}}
+
+
+def _inv(path, investors="default"):
+    inv = FakeInvestors() if investors == "default" else investors
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], investors=inv)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", path)
+        r = c.getresponse()
+        return r.status, r.read(), inv
+    finally:
+        server.shutdown()
+
+
+def test_investors_api_passes_paging_and_sorting_through_with_defaults():
+    st, body, inv = _inv("/api/investors/pebo?page=2&limit=50&sortBy=shares&sortOrder=asc")
+    assert st == 200 and json.loads(body)["summary"]["ticker"] == "PEBO"
+    assert inv.calls[0] == ("PEBO", {"page": 2, "limit": 50, "sort_by": "shares", "sort_order": "asc"})
+    _, _, inv = _inv("/api/investors/PEBO")
+    assert inv.calls[0][1] == {"page": 1, "limit": 20, "sort_by": "value", "sort_order": "desc"}
+
+
+def test_investors_api_error_mapping():
+    assert _inv("/api/investors/ZZZZ")[0] == 404
+    assert _inv("/api/investors/DOWN")[0] == 503
+    assert _inv("/api/investors/PEBO?sortBy=bad")[0] == 400
+    assert _inv("/api/investors/PEBO?page=abc")[0] == 400
+    assert _inv("/api/investors/bad%20ticker")[0] == 400
+    st, body, _ = _inv("/api/investors/PEBO", investors=None)
+    assert st == 503 and "SEC_CONTACT" in json.loads(body)["error"]
+
+
+def test_investors_page_is_served_for_a_valid_ticker_only():
+    st, body, _ = _inv("/stock/pebo/investors")
+    assert st == 200 and b"PEBO" in body and b"/api/investors/" in body
+    assert _inv("/stock/bad%3Cscript%3E/investors")[0] == 404
+
+
+def test_most_held_tickers_and_the_institutional_landing_lead_to_the_investors_page():
+    assert "'/stock/'+" in srv.render_smart_money() and "/investors" in srv.render_smart_money()
+    html = srv.render_institutional()
+    assert 'id="tkf"' in html and "/investors" in html

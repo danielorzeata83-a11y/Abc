@@ -19,8 +19,8 @@ def _name_prefixes(name):
 
 
 class TickerResolver:
-    def __init__(self, db_path, post, figi, cache_path=None):
-        self.db_path, self.post, self.figi, self.cache_path = db_path, post, figi, cache_path
+    def __init__(self, db_path, figi, cache_path=None):
+        self.db_path, self.figi, self.cache_path = db_path, figi, cache_path
         self._found = {}
         if cache_path:
             try:
@@ -49,7 +49,7 @@ class TickerResolver:
         return None
 
     def _from_name(self, t):
-        res = json.loads(self.post(self.figi.URL, [{"idType": "TICKER", "idValue": t, "exchCode": "US"}]))
+        res = self.figi.request([{"idType": "TICKER", "idValue": t, "exchCode": "US"}])
         data = (res[0].get("data") if res else None) or []
         stocks = [d for d in data if d.get("securityType") == "Common Stock"] or data
         name = next((d.get("name") for d in stocks if d.get("name")), None)

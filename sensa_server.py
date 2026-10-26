@@ -26,9 +26,10 @@ from sensa.thirteenf import Figi, ThirteenF
 from sensa.watch import Watcher
 from sensa.darkpool import DarkPool
 from sensa.insiders import InsiderService
+from sensa.investors import InvestorService, UnknownTicker
 from sensa.managers import browse
 from sensa.politicians import PoliticiansService
-from sensa.ui import (BASE_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_latest_filings,
+from sensa.ui import (BASE_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_latest_filings,
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -174,7 +175,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -266,6 +267,31 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                                                          member=member or None, limit=limit))
                 except ValueError:
                     self._json(400, {"error": "bad parameters"})
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
+                return
+            if len(parts) == 3 and parts[0] == "stock" and parts[2] == "investors":
+                if not _SYM.match(parts[1].upper()):
+                    self._send(404, "not found", "text/plain")
+                else:
+                    self._send(200, render_investors(parts[1].upper()), "text/html; charset=utf-8")
+                return
+            if len(parts) == 3 and parts[:2] == ["api", "investors"]:
+                if investors is None:
+                    self._json(503, {"error": "investor data is not configured (set SEC_CONTACT)"})
+                    return
+                if not _SYM.match(parts[2].upper()):
+                    self._json(400, {"error": "bad symbol"})
+                    return
+                q = parse_qs(u.query)
+                one = lambda k, d: (q.get(k) or [d])[0]
+                try:
+                    self._json(200, investors.lookup(parts[2].upper(), page=int(one("page", "1")), limit=int(one("limit", "20")),
+                                                     sort_by=one("sortBy", "value"), sort_order=one("sortOrder", "desc")))
+                except ValueError as e:
+                    self._json(400, {"error": str(e) if "must be" in str(e) else "bad parameters"})
+                except UnknownTicker as e:
+                    self._json(404, {"error": str(e)})
                 except DataUnavailable as e:
                     self._json(503, {"error": str(e)})
                 return
@@ -479,8 +505,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors))
 
 
 def build_hub():
@@ -525,6 +551,14 @@ def build_smart(contact):
     ua = {"User-Agent": f"Abc-dashboard-research/1.0 {contact}"}
     return OverviewService(data_dir, lambda: http_fetch(PAGE, ua), make_downloader(contact), figi, top=100,
                            notify=telegram_notifier())
+
+
+def build_investors(smart, contact):
+    """Institutional holders of one stock, from the index that the Smart Money Update builds."""
+    if smart is None:
+        return None
+    ua = {"User-Agent": f"Abc-dashboard-research/1.0 {contact}"}
+    return InvestorService(smart.data_dir, smart.figi, lambda url: http_fetch(url, ua))
 
 
 def build_insiders(contact):
@@ -586,13 +620,14 @@ def main():
     smart = build_smart(os.environ.get("SEC_CONTACT", "").strip())
     if smart is not None:
         hub.accession_lookup = smart.lookup_accession
+    investors = build_investors(smart, os.environ.get("SEC_CONTACT", "").strip())
     insiders = build_insiders(os.environ.get("SEC_CONTACT", "").strip())
     politicians = build_politicians(os.environ.get("SEC_CONTACT", "").strip())
     if a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(politicians, a.smart_hours, threading.Event()), daemon=True).start()
     srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders,
-                      darkpool=DarkPool(http_post), politicians=politicians)
+                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors)
     if insiders is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()
