@@ -234,7 +234,8 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     if not node:
         import pytest
         pytest.skip("node not installed")
-    pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts()]
+    pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
+             srv.render_smart_money()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -335,3 +336,72 @@ def test_watch_endpoints_are_404_when_no_watcher_is_configured():
 def test_alerts_page_renders_for_the_shared_nav():
     st, ct, body = _get_raw(FakeHub(), "/smart-money/alerts")
     assert st == 200 and b"Alerts" in body and b"Smart Money" in body
+
+
+class FakeSmart:
+    def __init__(self):
+        self.started = []
+
+    def overview(self):
+        return {"quarter": "Q2 2026", "funds": [], "stocks": []}
+
+    def status(self):
+        return {"state": "idle", "message": "", "period": "2026-06-30", "quarter": "Q2 2026", "built_at": "t"}
+
+    def start(self, force=False):
+        self.started.append(force)
+        return len(self.started) == 1
+
+
+def _smart_req(method, path, body=None, headers=None, smart=None):
+    sm = smart or FakeSmart()
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], smart=sm)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        h = {"Content-Type": "application/json"} if method == "POST" else {}
+        h.update(headers or {})
+        c.request(method, path, body=json.dumps(body) if body is not None else None, headers=h)
+        r = c.getresponse()
+        return r.status, r.read(), sm
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_smart_money_page_and_api_endpoints():
+    st, body, _ = _smart_req("GET", "/smart-money")
+    assert st == 200 and b"Most held" in body and b"Top funds" in body
+    st, body, _ = _smart_req("GET", "/api/smart-money/overview")
+    assert st == 200 and json.loads(body)["quarter"] == "Q2 2026"
+    st, body, _ = _smart_req("GET", "/api/smart-money/status")
+    assert st == 200 and json.loads(body)["state"] == "idle"
+
+
+def test_smart_money_refresh_starts_once_and_is_guarded_like_other_posts():
+    st, body, sm = _smart_req("POST", "/api/smart-money/refresh", {"force": True})
+    assert st == 200 and json.loads(body) == {"started": True} and sm.started == [True]
+    st, body, sm = _smart_req("POST", "/api/smart-money/refresh", {}, headers={"Content-Type": "text/plain"})
+    assert st == 415 and sm.started == []
+    st, _, sm = _smart_req("POST", "/api/smart-money/refresh", {}, headers={"Host": "evil.example.com"})
+    assert st == 403 and sm.started == []
+
+
+def test_smart_money_endpoints_report_503_when_not_configured():
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", "/api/smart-money/overview")
+        assert c.getresponse().status == 503
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_smart_money_overview_missing_build_is_503_with_the_hint():
+    class Empty(FakeSmart):
+        def overview(self):
+            raise DataUnavailable("No Smart Money overview yet. Press Update")
+    st, body, _ = _smart_req("GET", "/api/smart-money/overview", smart=Empty())
+    assert st == 503 and "Press Update" in json.loads(body)["error"]

@@ -46,6 +46,8 @@ def activity(current, previous):
 
 
 import json
+import os
+import re
 import xml.etree.ElementTree as ET
 
 from markov.data_providers import DataUnavailable
@@ -111,24 +113,60 @@ class ThirteenF:
         raise DataUnavailable(f"no information table in filing {accession}")
 
 
+_NORMAL = re.compile(r"[A-Z]{1,6}([./-][A-Z])?")
+
+
 class Figi:
-    """CUSIP -> ticker through OpenFIGI (free; 10 ids per call without a key)."""
+    """CUSIP -> ticker/kind through OpenFIGI (free: 10 ids per call, ~25 calls/min without a key)."""
     URL = "https://api.openfigi.com/v3/mapping"
+    _KIND = {"Common Stock": "stock", "ETP": "etf", "ADR": "adr", "Depositary Receipt": "adr"}
 
-    def __init__(self, post):
-        self.post, self._map = post, {}
+    def __init__(self, post, sleep=None, min_interval=0.0, cache_path=None):
+        self.post, self.min_interval, self.cache_path = post, min_interval, cache_path
+        self._sleep = sleep or __import__("time").sleep
+        self._map = {}
+        if cache_path:
+            try:
+                with open(cache_path, encoding="utf-8") as fh:
+                    self._map = {k: v for k, v in json.load(fh).items()}
+            except (OSError, ValueError, AttributeError):
+                self._map = {}
 
-    def lookup(self, cusips):
+    def _save(self):
+        if not self.cache_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self.cache_path)), exist_ok=True)
+            tmp = self.cache_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self._map, fh)
+            os.replace(tmp, self.cache_path)
+        except OSError:
+            pass                                        # a read-only disk must not break lookups
+
+    def info(self, cusips):
         todo = [c for c in dict.fromkeys(cusips) if c not in self._map]
-        for i in range(0, len(todo), 10):
+        for n, i in enumerate(range(0, len(todo), 10)):
+            if n and self.min_interval:
+                self._sleep(self.min_interval)
             batch = todo[i:i + 10]
             res = json.loads(self.post(self.URL, [{"idType": "ID_CUSIP", "idValue": c} for c in batch]))
             for c, r in zip(batch, res):
                 data = r.get("data") or []
-                us = [d for d in data if d.get("exchCode") == "US" and d.get("securityType") == "Common Stock"]
-                pick = (us or data or [None])[0]
-                self._map[c] = pick.get("ticker") if pick else None
+                stocks = [d for d in data if d.get("securityType") == "Common Stock"] or data
+
+                def rank(d):                      # US composite first, then a normal-looking ticker, then the shortest
+                    t = d.get("ticker") or ""
+                    return (d.get("exchCode") != "US", not _NORMAL.fullmatch(t), len(t) or 99)
+                pick = min(stocks, key=rank) if stocks else None
+                self._map[c] = ({"ticker": pick.get("ticker"),
+                                 "kind": self._KIND.get(pick.get("securityType"), "other")}
+                                if pick and pick.get("ticker") else None)
+            self._save()
         return {c: self._map[c] for c in cusips if self._map.get(c)}
+
+    def lookup(self, cusips):
+        return {c: v["ticker"] for c, v in self.info(cusips).items()}
 
 
 def changes(current, previous):

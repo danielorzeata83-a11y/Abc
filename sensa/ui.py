@@ -28,8 +28,8 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 @media(max-width:700px){.nav{padding:.5rem .6rem;overflow-x:auto}.wrap{padding:.7rem}}
 """
 
-NAV_ITEMS = (("dash", "/", "Dashboard"), ("inst", "/institutional-investor", "Smart Money"),
-             ("alerts", "/smart-money/alerts", "Alerts"))
+NAV_ITEMS = (("dash", "/", "Dashboard"), ("smart", "/smart-money", "Smart Money"),
+             ("inst", "/institutional-investor", "Funds"), ("alerts", "/smart-money/alerts", "Alerts"))
 
 
 def nav(active):
@@ -310,3 +310,111 @@ load();setInterval(load,60000);
 
 def render_alerts():
     return shell("Smart Money alerts", "alerts", _ALERTS_BODY, _ALERTS_JS, _MANAGER_CSS + _ALERTS_CSS)
+
+
+# ------------------------------------------------------- Smart Money overview (top 100)
+_SM_CSS = r"""
+.bar{display:flex;gap:.8rem;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:.8rem 0}
+.tabs{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:1rem 0 .8rem}
+select.sel{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.3rem .5rem;font:inherit}
+th.s{cursor:pointer;user-select:none}th.s:hover{color:var(--fg)}
+td.n,th.n{text-align:right}.note{font-size:.78rem;color:var(--mut);margin:.4rem 0}
+.moves{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem}
+.mrow{display:flex;justify-content:space-between;gap:.6rem;padding:.4rem 0;border-top:1px solid var(--line)}
+.mrow b{margin-right:.4rem}.mrow .r{text-align:right;white-space:nowrap}
+"""
+
+_SM_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Smart Money</h1>
+ <p class="mut">What the largest 13F filers hold, taken together, and how they moved since the previous quarter.</p>
+ <div class="card bar"><span id="st" class="mut">Loading…</span><span><button class="btn" id="upd">Update from SEC</button></span></div>
+ <div id="msg" class="err"></div>
+ <div class="stats" id="stats"></div>
+ <div class="tabs" id="tabs"></div>
+ <div id="view"></div>
+ <p class="note" id="note"></p>
+</div>
+"""
+
+_SM_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const money=v=>{const a=Math.abs(v),s=a>=1e12?'$'+(a/1e12).toFixed(2)+'T':a>=1e9?'$'+(a/1e9).toFixed(1)+'B':a>=1e6?'$'+(a/1e6).toFixed(0)+'M':'$'+Math.round(a).toLocaleString();return (v<0?'-':'')+s};
+const smoney=v=>(v>0?'+':'')+money(v);
+const pct=v=>v==null?'-':(v>0?'+':'')+v.toFixed(1)+'%';
+const cls=v=>v>0?'up':v<0?'dn':'mut';
+async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined),j=await r.json();
+ if(!r.ok)throw new Error(j.error||r.status);return j}
+let O=null,tab='held',kinds='stock',sortKey=null,sortDir=-1;
+const okKind=s=>kinds==='all'||s.kind==='stock'||s.kind==='adr';
+const core=s=>okKind(s)&&!s.gone&&!s.new_listing;
+function table(cols,rows,defKey){const t=el('table',null,'t'),thead=el('thead'),hr=el('tr');
+ const key=sortKey&&cols.some(c=>c.k===sortKey)?sortKey:defKey,dir=sortKey&&cols.some(c=>c.k===sortKey)?sortDir:(cols.find(c=>c.k===defKey)||{}).dir||-1;
+ for(const c of cols){const th=el('th',c.l+(c.k===key?(dir<0?' ▾':' ▴'):''),(c.n?'n ':'')+(c.sort===false?'':'s'));
+  if(c.sort!==false)th.onclick=()=>{sortDir=sortKey===c.k?-sortDir:(c.dir||-1);sortKey=c.k;draw()};hr.append(th)}
+ thead.append(hr);t.append(thead);
+ const get=r=>{const c=cols.find(c=>c.k===key);return c&&c.v?c.v(r):r[key]};
+ const sorted=rows.slice().sort((a,b)=>{const x=get(a),y=get(b);return (x>y?1:x<y?-1:0)*dir});
+ const tb=el('tbody');for(const r of sorted.slice(0,100)){const tr=el('tr');for(const c of cols){const td=c.r?c.r(r):el('td',c.f?c.f(r):String(r[c.k]));if(c.n)td.classList.add('n');tr.append(td)}tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+const cell=(txt,c)=>el('td',txt,c);
+function heldView(){const rows=O.stocks.filter(s=>okKind(s)&&!s.gone);
+ const cols=[{k:'ticker',l:'Ticker',dir:1,r:s=>{const d=el('td');d.append(el('b',s.ticker));return d}},
+  {k:'issuer',l:'Company',dir:1,f:s=>s.issuer},
+  {k:'holders',l:'Funds',n:1,r:s=>cell(s.holders+' / '+O.cohort)},
+  {k:'dh',l:'vs last Q',n:1,v:s=>s.holders-s.holders_prev,r:s=>cell((s.holders-s.holders_prev>0?'+':'')+(s.holders-s.holders_prev),cls(s.holders-s.holders_prev))},
+  {k:'value',l:'Value',n:1,f:s=>money(s.value)},
+  {k:'avg_weight',l:'Avg weight',n:1,f:s=>s.avg_weight.toFixed(2)+'%'},
+  {k:'active_flow',l:'Active flow',n:1,r:s=>cell(smoney(s.active_flow),cls(s.active_flow))},
+  {k:'added',l:'Added',n:1,f:s=>String(s.added)},{k:'reduced',l:'Reduced',n:1,f:s=>String(s.reduced)},
+  {k:'new',l:'New',n:1,f:s=>String(s.new)},{k:'exited',l:'Exited',n:1,f:s=>String(s.exited)}];
+ return table(cols,rows,'holders')}
+function list(title,rows,right,sub){const c=el('section',null,'card');c.append(el('h3',title));if(sub)c.append(el('div',sub,'note'));
+ if(!rows.length)c.append(el('div','Nothing to show','mut'));
+ for(const s of rows.slice(0,10)){const r=el('div',null,'mrow'),l=el('span'),b=el('b',s.ticker);l.append(b,document.createTextNode(s.issuer));
+  const rr=el('span',null,'r');right(s,rr);r.append(l,rr);c.append(r)}return c}
+function movesView(){const st=O.stocks.filter(core),w=el('div',null,'moves');
+ const flow=(s,r)=>{r.append(el('span',smoney(s.active_flow),cls(s.active_flow)),el('span','  '+s.holders+'/'+O.cohort,'mut'))};
+ w.append(list('Biggest active buying',st.slice().sort((a,b)=>b.active_flow-a.active_flow),flow,'Net shares bought beyond each fund\'s own proportional growth'),
+  list('Biggest active selling',st.slice().sort((a,b)=>a.active_flow-b.active_flow),flow),
+  list('Most new positions',st.filter(s=>s.new).sort((a,b)=>b.new-a.new),(s,r)=>r.append(el('span','+'+s.new+' funds','up'),el('span','  '+s.holders+'/'+O.cohort,'mut')),'Funds that did not hold it last quarter'),
+  list('Most positions closed',st.filter(s=>s.exited).sort((a,b)=>b.exited-a.exited),(s,r)=>r.append(el('span','-'+s.exited+' funds','dn'),el('span','  '+s.holders+'/'+O.cohort,'mut'))),
+  list('New to the group',O.stocks.filter(s=>s.new_listing&&okKind(s)).sort((a,b)=>b.holders-a.holders),(s,r)=>r.append(el('span',s.holders+'/'+O.cohort+' funds','up')),'IPOs, spin-offs, mergers and CUSIP changes: not chosen purchases'),
+  list('Disappeared from the group',O.stocks.filter(s=>s.gone).sort((a,b)=>b.holders_prev-a.holders_prev),(s,r)=>r.append(el('span',s.holders_prev+' funds held it','mut')),'Held last quarter, now by nobody: usually acquired or delisted, not sold'));
+ return w}
+function fundsView(){const cols=[{k:'rank',l:'#',dir:1,f:f=>String(f.rank)},
+  {k:'name',l:'Fund',dir:1,r:f=>{const d=el('td');if(/^[0-9]{1,10}$/.test(f.cik)){const a=el('a',f.name);a.href='/institutional-investor/manager/'+f.cik;d.append(a)}else d.textContent=f.name;return d}},
+  {k:'aum',l:'Reported value',n:1,f:f=>money(f.aum)},
+  {k:'aum_change_pct',l:'vs last Q',n:1,v:f=>f.aum_change_pct==null?-1e9:f.aum_change_pct,r:f=>cell(pct(f.aum_change_pct),cls(f.aum_change_pct))},
+  {k:'positions',l:'Positions',n:1,f:f=>String(f.positions)},
+  {k:'top',l:'Top holdings',sort:false,r:f=>{const d=el('td');for(const t of f.top.slice(0,3))d.append(el('span',t.ticker,'chip'));return d}},
+  {k:'top10_pct',l:'Top 10',n:1,f:f=>f.top10_pct.toFixed(1)+'%'},
+  {k:'turnover_pct',l:'Turnover',n:1,v:f=>f.turnover_pct==null?-1:f.turnover_pct,f:f=>f.turnover_pct==null?'-':f.turnover_pct.toFixed(1)+'%'},
+  {k:'new',l:'New',n:1,v:f=>f.new==null?-1:f.new,f:f=>f.new==null?'-':String(f.new)},
+  {k:'exited',l:'Exited',n:1,v:f=>f.exited==null?-1:f.exited,f:f=>f.exited==null?'-':String(f.exited)}];
+ return table(cols,O.funds,'rank')}
+function draw(){if(!O)return;const v=$('view');
+ v.replaceChildren(tab==='held'?heldView():tab==='moves'?movesView():fundsView())}
+function drawAll(){$('stats').replaceChildren(
+  ...[['Funds in view',String(O.cohort),O.comparable+' comparable with '+O.prev_quarter],['Reported value',money(O.total_aum),O.quarter],
+      ['Distinct stocks',O.distinct_stocks.toLocaleString(),'held by at least one of them'],['Stock splits adjusted',String((O.splits||[]).length),'so they do not look like buying']]
+   .map(([k,v,d])=>{const c=el('div',null,'card stat');c.append(el('div',k,'k'),el('div',v,'v'),el('div',d,'d mut'));return c}));
+ const t=$('tabs');t.replaceChildren();
+ for(const [k,l] of [['held','Most held'],['moves','Moves'],['funds','Top funds']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;sortKey=null;drawAll()};t.append(b)}
+ const sel=el('select',null,'sel');for(const [k,l] of [['stock','Stocks & ADRs'],['all','Include ETFs & other']]){const o=el('option',l);o.value=k;o.selected=k===kinds;sel.append(o)}
+ sel.onchange=()=>{kinds=sel.value;draw()};if(tab!=='funds')t.append(sel);
+ $('note').textContent='Funds = how many of the '+O.cohort+' filers hold it. Active flow = net shares bought or sold beyond each fund\'s own proportional growth, at quarter-end prices. 13F lists long positions only, reported up to 45 days after quarter end.';
+ draw()}
+async function status(){try{const s=await api('/api/smart-money/status');
+  $('st').textContent=s.state==='running'?'Updating from SEC… this can take a few minutes':(s.quarter?'Data: '+s.quarter+' · built '+s.built_at.replace('T',' ').replace('+00:00',' UTC'):'Not built yet')+(s.state==='error'?' · last update failed: '+s.message:'');
+  $('upd').disabled=s.state==='running';return s.state}catch(e){$('st').textContent='';return 'idle'}}
+async function load(){try{O=await api('/api/smart-money/overview');$('msg').textContent='';drawAll()}catch(e){O=null;$('stats').replaceChildren();$('tabs').replaceChildren();$('view').replaceChildren();$('msg').textContent=e.message}}
+async function poll(){const s=await status();if(s==='running')setTimeout(poll,3000);else load()}
+$('upd').onclick=async()=>{try{await api('/api/smart-money/refresh',{force:false});poll()}catch(e){$('msg').textContent=e.message}};
+load();poll();
+"""
+
+
+def render_smart_money():
+    return shell("Smart Money", "smart", _SM_BODY, _SM_JS, _MANAGER_CSS + _SM_CSS)

@@ -7,3 +7,4 @@ data/*.csv
 data/intraday/
 data/13f/
 data/watch/
+data/smart_money/

@@ -24,7 +24,7 @@ from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_post, yahoo_news
 from sensa.thirteenf import Figi, ThirteenF
 from sensa.watch import Watcher
-from sensa.ui import BASE_CSS, nav, render_alerts, render_institutional, render_manager
+from sensa.ui import BASE_CSS, nav, render_alerts, render_institutional, render_manager, render_smart_money
 
 DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
@@ -167,7 +167,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -195,6 +195,18 @@ def _make_handler(hub, watchlist, watcher=None):
                         self._send(200, fh.read(), "application/javascript")
                 except OSError:
                     self._send(404, "missing vendored JS", "text/plain")
+                return
+            if u.path.rstrip("/") == "/smart-money":
+                self._send(200, render_smart_money(), "text/html; charset=utf-8")
+                return
+            if u.path in ("/api/smart-money/overview", "/api/smart-money/status"):
+                if smart is None:
+                    self._json(503, {"error": "Smart Money overview is not configured (set SEC_CONTACT)"})
+                    return
+                try:
+                    self._json(200, smart.overview() if u.path.endswith("overview") else smart.status())
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
                 return
             if u.path.rstrip("/") == "/smart-money/alerts":
                 self._send(200, render_alerts(), "text/html; charset=utf-8")
@@ -294,10 +306,16 @@ def _make_handler(hub, watchlist, watcher=None):
             except ValueError:
                 self._json(400, {"error": "bad json"})
                 return
+            route = urlparse(self.path).path
+            if route == "/api/smart-money/refresh":
+                if smart is None:
+                    self._json(503, {"error": "Smart Money overview is not configured (set SEC_CONTACT)"})
+                else:
+                    self._json(200, {"started": smart.start(force=bool(body.get("force")))})
+                return
             if watcher is None:
                 self._json(503, {"error": "watching is not configured (set SEC_CONTACT)"})
                 return
-            route = urlparse(self.path).path
             try:
                 if route in ("/api/watch/follow", "/api/watch/unfollow"):
                     cik = str(body.get("cik", "")).strip()
@@ -316,8 +334,8 @@ def _make_handler(hub, watchlist, watcher=None):
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart))
 
 
 def build_hub():
@@ -341,16 +359,39 @@ def build_hub():
                cache_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f"))
 
 
+def telegram_notifier():
+    """Callable(text) when TELEGRAM_TOKEN and TELEGRAM_CHAT_ID are set, else None."""
+    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+    chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not (token and chat):
+        return None
+    from markov.telegram import send_message
+    return lambda text: send_message(token, chat, text)
+
+
+def build_smart(contact):
+    """Cross-fund Smart Money overview (top managers from SEC's quarterly bulk data sets)."""
+    if not contact:
+        return None
+    from smart_money_build import DATA_DIR, PAGE, make_downloader
+    from sensa.smart_money import OverviewService
+    data_dir = os.environ.get("SMART_MONEY_DIR", "").strip() or DATA_DIR
+    figi = Figi(http_post, min_interval=2.5, cache_path=os.path.join(data_dir, "figi.json"))
+    ua = {"User-Agent": f"Abc-dashboard-research/1.0 {contact}"}
+    return OverviewService(data_dir, lambda: http_fetch(PAGE, ua), make_downloader(contact), figi, top=100,
+                           notify=telegram_notifier())
+
+
+def _smart_loop(smart, hours, stop):
+    while not stop.wait(hours * 3600):
+        smart.start()                    # no-op unless SEC published a newer quarter
+
+
 def build_watcher(hub):
     """Follow-list + signals. Needs SEC_CONTACT (same as the 13F pages). Telegram is optional."""
     if hub.thirteenf is None:
         return None
-    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
-    chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    notify = None
-    if token and chat:
-        from markov.telegram import send_message
-        notify = lambda text: send_message(token, chat, text)
+    notify = telegram_notifier()
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "watch", "watch.json")
     return Watcher(hub.thirteenf, hub.figi, path, notify=notify)
 
@@ -369,13 +410,19 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--watchlist", default=",".join(DEFAULT_WATCHLIST))
+    ap.add_argument("--smart-hours", type=int, default=24,
+                    help="how often to look for a newer 13F quarter for the Smart Money overview (0 = off)")
     ap.add_argument("--watch-minutes", type=int, default=60,
                     help="how often to look for new 13F filings of followed funds (0 = off)")
     a = ap.parse_args()
     wl = [s for s in a.watchlist.upper().split(",") if _SYM.match(s)]
     hub = build_hub()
     watcher = build_watcher(hub)
-    srv = make_server(hub, a.host, a.port, wl, watcher=watcher)
+    smart = build_smart(os.environ.get("SEC_CONTACT", "").strip())
+    srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart)
+    if smart is not None and a.smart_hours > 0:
+        import threading
+        threading.Thread(target=_smart_loop, args=(smart, a.smart_hours, threading.Event()), daemon=True).start()
     if watcher is not None and a.watch_minutes > 0:
         import threading
         threading.Thread(target=_watch_loop, args=(watcher, a.watch_minutes, threading.Event()),

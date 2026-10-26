@@ -187,3 +187,59 @@ def test_changes_sorted_by_size_of_the_position_involved():
 
 def test_changes_without_previous_filing_is_empty_not_all_new():
     assert changes([_p("1", 1, 1)], None) == []
+
+
+def test_figi_info_returns_ticker_and_kind_for_stock_etf_and_adr():
+    def post(url, payload):
+        data = {"S1": {"ticker": "AAA", "exchCode": "US", "securityType": "Common Stock"},
+                "E1": {"ticker": "SPY", "exchCode": "US", "securityType": "ETP"},
+                "R1": {"ticker": "BABA", "exchCode": "US", "securityType": "ADR"},
+                "X1": {"ticker": "ZZZ", "exchCode": "US", "securityType": "Weird Thing"}}
+        return json.dumps([{"data": [data[p["idValue"]]]} for p in payload])
+    info = Figi(post=post).info(["S1", "E1", "R1", "X1"])
+    assert info["S1"] == {"ticker": "AAA", "kind": "stock"} and info["E1"]["kind"] == "etf"
+    assert info["R1"]["kind"] == "adr" and info["X1"]["kind"] == "other"
+
+
+def test_figi_throttles_between_batches_to_respect_the_free_rate_limit():
+    sleeps = []
+    f = Figi(post=lambda u, p: json.dumps([{"warning": "none"} for _ in p]), sleep=sleeps.append, min_interval=2.5)
+    f.lookup([f"C{i:02d}" for i in range(25)])        # 3 batches
+    assert sleeps == [2.5, 2.5]                        # between batches, not before the first
+
+
+def test_figi_disk_cache_survives_restart_and_remembers_unknown_cusips(tmp_path):
+    calls = []
+
+    def post(url, payload):
+        calls.append(len(payload))
+        return json.dumps([{"data": [{"ticker": "T" + p["idValue"], "exchCode": "US", "securityType": "Common Stock"}]}
+                           if p["idValue"] != "NOPE" else {"warning": "No identifier found."} for p in payload])
+    path = str(tmp_path / "figi.json")
+    Figi(post=post, cache_path=path).info(["A", "NOPE"])
+    again = Figi(post=post, cache_path=path)
+    assert again.info(["A", "NOPE"]) == {"A": {"ticker": "TA", "kind": "stock"}}
+    assert calls == [2]                                # second instance answered from disk, even for NOPE
+
+
+def test_figi_picks_the_shortest_us_ticker_when_a_cusip_has_several():
+    def post(url, payload):
+        return json.dumps([{"data": [
+            {"ticker": "EXMOC", "exchCode": "US", "securityType": "Common Stock"},
+            {"ticker": "XOM", "exchCode": "US", "securityType": "Common Stock"},
+            {"ticker": "XON", "exchCode": "GR", "securityType": "Common Stock"}]}])
+    assert Figi(post=post).lookup(["X"]) == {"X": "XOM"}
+
+
+def test_figi_without_any_us_composite_prefers_a_normal_short_ticker():
+    def post(url, payload):                       # shaped like the real answer for Exxon's CUSIP
+        e = lambda t, x: {"ticker": t, "exchCode": x, "securityType": "Common Stock"}
+        return json.dumps([{"data": [e("EXMOC", "CP"), e("EXMOC", "RC"), e("XOM", "UZ"), e("XOM", "OU"),
+                                     e("1XOMM", "PO"), e("1XOMM", "L1")]}])
+    assert Figi(post=post).lookup(["X"]) == {"X": "XOM"}
+
+
+def test_figi_keeps_class_share_tickers_like_brk_b():
+    def post(url, payload):
+        return json.dumps([{"data": [{"ticker": "BRK/B", "exchCode": "US", "securityType": "Common Stock"}]}])
+    assert Figi(post=post).lookup(["X"]) == {"X": "BRK/B"}

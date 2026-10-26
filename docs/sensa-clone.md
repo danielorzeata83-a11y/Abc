@@ -30,6 +30,32 @@ top holdings, istoric filing-uri cu paginare, alocare, activitate vs trimestrul 
   Prima deschidere a unui manager e lentă (SEC răspunde în 1–4 s pe cerere; ~40 de cereri pentru 20 de filing-uri), apoi instant.
 - Nu există încă: alocarea pe sectoare, compararea a 2 trimestre, filtrele din tabel, logo-uri/fotografii.
 
+## Smart Money: vedere de ansamblu asupra celor mai mari 100 de fonduri (`/smart-money`)
+Trei vederi peste **aceleași 100 de fonduri** (cele mai mari după valoarea raportată în 13F), comparate cu trimestrul anterior:
+- **Most held**: câte din cele 100 dețin fiecare acțiune (și diferența față de trimestrul trecut), valoare cumulată,
+  pondere medie în portofoliile care o dețin, flux activ, câte fonduri au crescut / redus / deschis / închis poziția.
+- **Moves**: cumpărări și vânzări active cele mai mari, cele mai multe poziții noi, cele mai multe poziții închise,
+  „New to the group" (IPO, spin-off, schimbări de CUSIP) și „Disappeared" (preluări, delistări).
+- **Top funds**: clasamentul fondurilor: valoare, variație, poziții, top 3, concentrare top 10, rotație, poziții noi/închise.
+
+Cum se obțin datele (SEC, gratuit): seturile trimestriale **Form 13F data sets** (~100 MB fiecare, se descarcă o dată în
+`data/smart_money/zips/`). `python smart_money_build.py` sau butonul **Update from SEC** din pagină (în fundal, cu stare vizibilă).
+Prima construcție durează ~3 minute (limita OpenFIGI fără cheie); tickerele se rețin în `data/smart_money/figi.json`.
+Serverul verifică zilnic dacă SEC a publicat un trimestru nou (`--smart-hours`), îl construiește singur și trimite
+**un rezumat pe Telegram** (cele mai deținute, cumpărări/vânzări active, poziții noi) dacă ai configurat Telegram.
+
+Ce înseamnă cifrele (și ce corectez, ca să nu inducă în eroare):
+- **Flux activ** = acțiuni cumpărate/vândute peste creșterea proporțională a fondului (intrările de bani ale fondurilor index),
+  la prețul de la sfârșitul trimestrului. **Flux brut** apare în date ca `net_flow`.
+- **Split-urile** se detectează (raportul median de acțiuni lipit de un raport uzual, majoritatea fondurilor în jurul lui) și
+  se ajustează: altfel un split 10:1 arată ca „92 de fonduri au cumpărat" (22 detectate în Q2 2026).
+- **Rotația** se calculează pe ponderi, fără scalarea uniformă a fondului: BlackRock/Vanguard ~2%, casele de tranzacționare 50%+.
+- Fluxurile se calculează doar pe fondurile prezente în **ambele** trimestre.
+- Limite: 13F conține doar poziții lungi (fără short), cu până la 45 de zile întârziere; valoarea unui fond include și ETF-uri/opțiuni
+  în totalul raportat, dar „held" numără doar acțiuni obișnuite (SH, fără PUT/CALL). Salturi mari de la un trimestru la altul la un
+  fond (ex. +93%) pot veni din schimbarea structurii depunerii (entități combinate), nu din piață. Amendamentele care doar adaugă
+  poziții nu sunt incluse.
+
 ## Alerte Smart Money (`/smart-money/alerts`)
 Urmărești fonduri după CIK (buton **Follow** pe profilul fondului sau pe pagina de alerte). Când un fond depune un
 13F nou, aplicația compară cu trimestrul anterior și creează un **semnal**: poziții noi, ieșite, crescute, reduse
