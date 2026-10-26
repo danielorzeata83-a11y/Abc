@@ -139,3 +139,24 @@ def test_short_volume_parses_file_once_per_hour_and_looks_up_symbols():
     t[0] = 4000.0
     hub.short_volume("AAA")
     assert Fin.loads == 2
+
+
+def test_candles_delegates_validates_timeframe_and_caches():
+    calls = []
+
+    def candles(sym, tf):
+        calls.append((sym, tf))
+        return [{"time": 1, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 3}]
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, candles_fn=candles, ttl=60)
+    assert hub.candles("aaa", "1h")[0]["close"] == 1
+    hub.candles("AAA", "1h")
+    assert calls == [("AAA", "1h")]
+    import pytest as _p
+    with _p.raises(ValueError):
+        hub.candles("AAA", "7m")
+
+
+def test_candles_unavailable_when_not_configured():
+    import pytest as _p
+    with _p.raises(DataUnavailable):
+        make().candles("AAA", "1h")

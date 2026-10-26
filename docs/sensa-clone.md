@@ -6,6 +6,7 @@ Harta site-ului original: `docs/alphacrunching-map.md`.
 ## Carduri și surse (toate gratuite)
 | Card | Sursă | Cheie / configurare |
 |---|---|---|
+| Chart (candlestick + volum, 15m–1day) | cache intraday din `intraday_server.py` (Alpha Vantage) | `ALPHAVANTAGE_API_KEY` gratuit, o singură dată pentru backfill |
 | Top gainers / losers | Cboe delayed quotes (~15 min) | — |
 | Sector heatmap | Cboe, ETF-urile SPDR XL* | — |
 | Options snapshot: lanț, greeks, C/P ratio, **GEX**, 0DTE | Cboe delayed options | — |
@@ -17,6 +18,17 @@ Harta site-ului original: `docs/alphacrunching-map.md`.
 
 Cache TTL: 60 s (cotații, opțiuni, știri), 5 min (insideri), 1 h (FINRA).
 Date Cboe/Yahoo: doar uz personal / cercetare. Cheile merg doar în variabile de mediu.
+
+## Graficul candlestick
+Citește cache-ul din `data/intraday/` (același ca `intraday_server.py`, fără rețea la citire).
+Fără cache, cardul arată „No cached data for X". Ca să-l umpli, o dată sau periodic:
+```bash
+export ALPHAVANTAGE_API_KEY=...        # cheie gratuită, ~25 cereri/zi, 5/min
+python intraday_server.py --watchlist AAPL,MSFT,NVDA --backfill-months 3
+```
+Alte directoare: `INTRADAY_DATA_DIR`. Biblioteca `lightweight-charts` v4.2.0 (TradingView, Apache-2.0)
+este acum build-ul real în `markov/intraday/static/` (înainte era un stub de 730 de octeți,
+deci graficul din `intraday_server.py` nu se desena); licența e alături.
 
 ## Rulare
 ```bash
@@ -35,7 +47,4 @@ python -m pytest tests -k sensa
 ## Ce nu există gratuit / legitim și nu e inclus
 - **Prețuri live (WebSocket)**: nu există sursă gratuită; Cboe e oricum întârziat, pagina reîmprospătează la 60 s.
 - **Option flow / dark pool real**: fără sursă gratuită bună.
-- **Grafic candlestick**: singura sursă gratuită fără cheie de istoric (Yahoo `chart`) este neoficială.
-  În repo există deja `intraday_server.py` (candlestick + VWAP, `lightweight-charts`, Alpha Vantage);
-  poate fi legat aici dacă se dorește.
 - Cont, watchlist salvat, conectare la brokeri.

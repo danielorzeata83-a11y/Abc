@@ -7,14 +7,15 @@ from datetime import date
 from markov.data_providers import DataUnavailable
 from sensa.service import SECTOR_ETFS, analyst_consensus, cp_ratio, gex, movers, sector_heatmap
 
+TIMEFRAMES = ("15m", "30m", "1h", "4h", "1day")   # same set as markov.intraday.service
 _STRIKE_BAND = 0.15   # show GEX strikes within +/-15% of spot
 
 
 class Hub:
-    def __init__(self, cboe, news_fn, curve_fn, analyst=None, edgar=None, finra=None, ttl=60,
+    def __init__(self, cboe, news_fn, curve_fn, analyst=None, edgar=None, finra=None, candles_fn=None, ttl=60,
                  clock=time.monotonic, today=lambda: date.today().isoformat()):
         self.cboe, self.news_fn, self.curve_fn, self.analyst_src = cboe, news_fn, curve_fn, analyst
-        self.edgar, self.finra = edgar, finra
+        self.edgar, self.finra, self.candles_fn = edgar, finra, candles_fn
         self.ttl, self.clock, self.today, self._cache = ttl, clock, today, {}
 
     def _cached(self, key, load, ttl=None):
@@ -70,6 +71,14 @@ class Hub:
         if self.edgar is None:
             raise DataUnavailable("EDGAR not configured (set SEC_CONTACT)")
         return self._cached(("i", symbol, limit), lambda: self.edgar.recent(symbol, limit), ttl=300)
+
+    def candles(self, symbol, tf):
+        if self.candles_fn is None:
+            raise DataUnavailable("candles not configured")
+        if tf not in TIMEFRAMES:
+            raise ValueError(f"bad timeframe {tf!r}")
+        s = symbol.upper()
+        return self._cached(("c", s, tf), lambda: self.candles_fn(s, tf))
 
     def short_volume(self, symbol):
         if self.finra is None:

@@ -27,6 +27,9 @@ DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 DEFAULT_WATCHLIST = ("AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "SPY", "QQQ")
 
+_STATIC_JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "markov", "intraday",
+                          "static", "lightweight-charts.standalone.production.js")
+
 _PAGE = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Options Dashboard</title>
@@ -45,12 +48,15 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 .bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:.5rem 0}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:4px}
 .tile{padding:.5rem;border-radius:4px;font-size:.78rem;color:#fff}.tile b{display:block;font-size:.9rem}
+.wide{grid-column:1/-1}.tf{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:.2rem .6rem;margin-right:4px;cursor:pointer}
+.tf.on{border-color:var(--acc);color:var(--acc)}
 .err{color:var(--dn);font-size:.85rem}footer{color:var(--mut);font-size:.75rem;padding:0 1rem 1rem}
 @media(max-width:480px){main{padding:.6rem;gap:.6rem}}
 </style></head><body>
 <header><b>Options Dashboard</b><span>symbol</span>
 <select id="sym">__OPTIONS__</select></header>
 <main>
+<section class="card wide"><h3>Chart</h3><div id="tfs"></div><div id="chart" style="height:340px;margin-top:.5rem"></div><div id="chartmsg"></div></section>
 <section class="card"><h3>Top gainers</h3><div id="gain"></div></section>
 <section class="card"><h3>Top losers</h3><div id="lose"></div></section>
 <section class="card"><h3>Sector heatmap</h3><div id="sect" class="tiles"></div></section>
@@ -60,7 +66,8 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 <section class="card"><h3>Short volume (FINRA)</h3><div id="shv"></div></section>
 <section class="card"><h3>Insider trades (Form 4)</h3><div id="ins"></div></section>
 <section class="card"><h3>Market news</h3><div id="news"></div></section>
-</main><footer>__DISCLAIMER__ Data: Cboe delayed quotes (~15 min), FRED, Yahoo Finance RSS, SEC EDGAR, FINRA.</footer>
+</main><footer>__DISCLAIMER__ Data: Cboe delayed quotes (~15 min), FRED, Yahoo Finance RSS, SEC EDGAR, FINRA. Charts: TradingView Lightweight Charts™ (Apache-2.0).</footer>
+<script src="/static/lightweight-charts.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const el=(t,txt,cls)=>{const e=document.createElement(t);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e};
@@ -71,6 +78,21 @@ function rows(box,list){const t=el('table');for(const r of list){const tr=el('tr
  tr.append(el('td',r.symbol),el('td',r.price.toFixed(2),'mut'),
  el('td',(r.change_pct>0?'+':'')+r.change_pct+'%',r.change_pct>0?'up':'dn'));t.append(tr)}
  box.replaceChildren(list.length?t:el('span','no data','mut'))}
+let chart,candleS,volS,tf='1h';
+function initChart(){if(chart||!window.LightweightCharts)return;
+ chart=LightweightCharts.createChart($('chart'),{autoSize:true,layout:{background:{color:'#161b22'},textColor:'#e6edf3'},
+  grid:{vertLines:{color:'#21262d'},horzLines:{color:'#21262d'}},timeScale:{timeVisible:true}});
+ candleS=chart.addCandlestickSeries();
+ volS=chart.addHistogramSeries({priceScaleId:'',priceFormat:{type:'volume'},color:'#58a6ff55'});
+ volS.priceScale().applyOptions({scaleMargins:{top:0.8,bottom:0}})}
+async function bars(s){const m=$('chartmsg');m.textContent='';initChart();
+ if(!chart){m.replaceChildren(el('div','chart library failed to load','err'));return}
+ try{const r=await api('/api/bars/'+s+'?tf='+tf);
+  candleS.setData(r.map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close})));
+  volS.setData(r.map(b=>({time:b.time,value:b.volume})));chart.timeScale().fitContent()}
+ catch(e){candleS.setData([]);volS.setData([]);fail(m,e)}}
+for(const t of ['15m','30m','1h','4h','1day']){const b=el('button',t,'tf'+(t===tf?' on':''));
+ b.onclick=()=>{tf=t;document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('on',x===b));bars($('sym').value)};$('tfs').append(b)}
 async function movers(){try{const m=await api('/api/movers');rows($('gain'),m.gainers);rows($('lose'),m.losers)}catch(e){fail($('gain'),e);fail($('lose'),e)}}
 async function analyst(s){const b=$('analyst');try{const a=await api('/api/analyst/'+s);
  if(!a){b.textContent='n/a (set FINNHUB_API_KEY to enable)';return}
@@ -114,8 +136,8 @@ async function insiders(s){const b=$('ins');try{const r=await api('/api/insiders
 async function news(){const b=$('news');try{const n=await api('/api/news'),u=el('ul');
  for(const x of n){const li=el('li'),h=safeUrl(x.url),a=el('a',x.headline);if(h){a.href=h;a.target='_blank';a.rel='noopener noreferrer'}
   li.append(a,el('span',' '+(x.source||''),'mut'));u.append(li)}b.replaceChildren(u)}catch(e){fail(b,e)}}
-$('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value);insiders(e.target.value);shortvol(e.target.value)};
-movers();sectors();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);shortvol($('sym').value);
+$('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value);insiders(e.target.value);shortvol(e.target.value);bars(e.target.value)};
+movers();sectors();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);shortvol($('sym').value);bars($('sym').value);
 setInterval(()=>{movers();sectors()},60000);
 </script></body></html>"""
 
@@ -157,6 +179,13 @@ def _make_handler(hub, watchlist):
             if u.path == "/":
                 self._send(200, render_index(watchlist), "text/html; charset=utf-8")
                 return
+            if u.path == "/static/lightweight-charts.js":
+                try:
+                    with open(_STATIC_JS, "rb") as fh:
+                        self._send(200, fh.read(), "application/javascript")
+                except OSError:
+                    self._send(404, "missing vendored JS", "text/plain")
+                return
             if len(parts) < 2 or parts[0] != "api":
                 self._send(404, "not found", "text/plain")
                 return
@@ -175,6 +204,8 @@ def _make_handler(hub, watchlist):
                     payload = hub.options(arg)
                 elif route == "short-volume" and arg:
                     payload = hub.short_volume(arg)
+                elif route == "bars" and arg:
+                    payload = hub.candles(arg, parse_qs(u.query).get("tf", ["1h"])[0])
                 elif route == "sectors":
                     payload = hub.sectors()
                 elif route == "insiders":
@@ -187,6 +218,8 @@ def _make_handler(hub, watchlist):
                     self._send(404, "not found", "text/plain")
                     return
                 self._json(200, payload)
+            except ValueError as e:
+                self._json(400, {"error": str(e)})
             except DataUnavailable as e:
                 self._json(503, {"error": str(e)})
 
@@ -198,6 +231,8 @@ def make_server(hub, host, port, watchlist):
 
 
 def build_hub():
+    from markov.intraday.service import Config, get_candles
+    data_dir = Config.from_env().data_dir
     key = os.environ.get("FINNHUB_API_KEY", "").strip()
 
     def news(symbol):
@@ -206,7 +241,8 @@ def build_hub():
     fred = FredApi(os.environ.get("FRED_API_KEY", "").strip())
     sec = os.environ.get("SEC_CONTACT", "").strip()
     return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
-               edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch))
+               edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch),
+               candles_fn=lambda sym, tf: get_candles(sym, tf, data_dir))
 
 
 def main():

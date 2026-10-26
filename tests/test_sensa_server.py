@@ -151,3 +151,40 @@ def test_other_write_errors_still_propagate():
     import pytest
     with pytest.raises(ValueError):
         srv.write_quietly(Broken(), b"x")
+
+
+def _get_raw(hub, path):
+    server = srv.make_server(hub, "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", path)
+        r = c.getresponse()
+        return r.status, r.getheader("Content-Type"), r.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_bars_endpoint_passes_symbol_and_timeframe():
+    class H(FakeHub):
+        def candles(self, s, tf):
+            return [{"time": 1, "open": 1, "high": 2, "low": 0, "close": 1.5, "volume": 1, "s": s, "tf": tf}]
+    st, _, body = _get_raw(H(), "/api/bars/aaa?tf=4h")
+    assert st == 200 and json.loads(body)[0]["s"] == "AAA" and json.loads(body)[0]["tf"] == "4h"
+
+
+def test_bars_bad_timeframe_is_400_and_missing_cache_is_503():
+    class H(FakeHub):
+        def candles(self, s, tf):
+            if tf == "1h":
+                raise DataUnavailable("no intraday cache for AAA")
+            raise ValueError("bad tf")
+    assert _get_raw(H(), "/api/bars/AAA?tf=7m")[0] == 400
+    st, _, body = _get_raw(H(), "/api/bars/AAA?tf=1h")
+    assert st == 503 and "no intraday cache" in json.loads(body)["error"]
+
+
+def test_vendored_chart_library_is_served():
+    st, ct, body = _get_raw(FakeHub(), "/static/lightweight-charts.js")
+    assert st == 200 and "javascript" in ct and len(body) > 10000
