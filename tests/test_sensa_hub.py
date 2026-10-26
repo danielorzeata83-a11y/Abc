@@ -80,3 +80,27 @@ def test_analyst_is_none_when_not_configured_or_no_data():
         def recommendations(self, sym):
             return []
     assert make(analyst=Empty()).analyst("AAA") is None
+
+
+class FakeEdgar:
+    def __init__(self):
+        self.calls = 0
+
+    def recent(self, symbol=None, limit=10):
+        self.calls += 1
+        return [{"symbol": symbol or "ACME", "side": "buy"}]
+
+
+def test_insiders_cached_for_five_minutes_regardless_of_short_ttl():
+    ed, t = FakeEdgar(), [0.0]
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, edgar=ed, ttl=60, clock=lambda: t[0])
+    hub.insiders(); t[0] = 120.0; hub.insiders()
+    assert ed.calls == 1                       # 120s < 300s insider ttl
+    t[0] = 400.0; hub.insiders()
+    assert ed.calls == 2
+
+
+def test_insiders_unavailable_without_edgar():
+    import pytest as _p
+    with _p.raises(DataUnavailable):
+        make().insiders()

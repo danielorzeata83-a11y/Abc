@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from markov.data_providers import DataUnavailable
+from sensa.edgar import Edgar
 from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, yahoo_news
 
@@ -52,6 +53,7 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 <section class="card"><h3>Analyst consensus</h3><div id="analyst"></div></section>
 <section class="card"><h3>Options snapshot</h3><div id="opts"></div></section>
 <section class="card"><h3>Treasury yield curve</h3><div id="yc"></div></section>
+<section class="card"><h3>Insider trades (Form 4)</h3><div id="ins"></div></section>
 <section class="card"><h3>Market news</h3><div id="news"></div></section>
 </main><footer>__DISCLAIMER__ Data: Cboe delayed quotes (~15 min), FRED, Yahoo Finance RSS.</footer>
 <script>
@@ -89,11 +91,16 @@ async function curve(){const b=$('yc');try{const y=await api('/api/yield-curve')
  const pl=document.createElementNS(ns,'polyline');pl.setAttribute('points',pts);
  pl.setAttribute('fill','none');pl.setAttribute('stroke','#58a6ff');pl.setAttribute('stroke-width','2');svg.append(pl);
  b.replaceChildren(svg,el('div',y.date+' · '+p[0][0]+' '+p[0][1]+'% → '+p[p.length-1][0]+' '+p[p.length-1][1]+'%','mut'))}catch(e){fail(b,e)}}
+async function insiders(s){const b=$('ins');try{const r=await api('/api/insiders/'+s);
+ if(!r.length){b.replaceChildren(el('span','no recent open-market trades for '+s,'mut'));return}
+ const t=el('table');for(const x of r){const tr=el('tr');
+  tr.append(el('td',x.owner+' · '+x.role),el('td',x.side+' '+x.shares+' @ '+x.price,x.side==='buy'?'up':'dn'));t.append(tr)}
+ b.replaceChildren(t)}catch(e){fail(b,e)}}
 async function news(){const b=$('news');try{const n=await api('/api/news'),u=el('ul');
  for(const x of n){const li=el('li'),h=safeUrl(x.url),a=el('a',x.headline);if(h){a.href=h;a.target='_blank';a.rel='noopener noreferrer'}
   li.append(a,el('span',' '+(x.source||''),'mut'));u.append(li)}b.replaceChildren(u)}catch(e){fail(b,e)}}
-$('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value)};
-movers();news();curve();analyst($('sym').value);opts($('sym').value);
+$('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value);insiders(e.target.value)};
+movers();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);
 setInterval(movers,60000);
 </script></body></html>"""
 
@@ -142,6 +149,8 @@ def _make_handler(hub, watchlist):
                     payload = hub.analyst(arg)
                 elif route == "options" and arg:
                     payload = hub.options(arg)
+                elif route == "insiders":
+                    payload = hub.insiders(arg)
                 elif route == "news":
                     payload = hub.news(arg)
                 elif route == "yield-curve":
@@ -167,7 +176,9 @@ def build_hub():
         return yahoo_news(http_fetch(YAHOO_RSS.format(sym=symbol or "SPY")))
 
     fred = FredApi(os.environ.get("FRED_API_KEY", "").strip())
-    return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None)
+    sec = os.environ.get("SEC_CONTACT", "").strip()
+    return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
+               edgar=Edgar(sec, http_fetch) if sec else None)
 
 
 def main():

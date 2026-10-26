@@ -10,6 +10,7 @@ Harta site-ului original: `docs/alphacrunching-map.md`.
 | Opțiuni: lanț, greeks, IV, OI, volum, C/P, **GEX / 0DTE** | Cboe delayed options | GEX calculat local din gamma × OI |
 | Știri | Yahoo Finance RSS | |
 | Curba randamentelor | FRED API oficial | cheie gratuită în `FRED_API_KEY` (fred.stlouisfed.org/docs/api/api_key.html) |
+| Insideri (Form 4: cumpărări/vânzări de piață) | SEC EDGAR | gratuit; cere `SEC_CONTACT` (email real în User-Agent, politica SEC) |
 | Consens analiști (opțional) | Finnhub, `FINNHUB_API_KEY` | fără cheie cardul arată „n/a" |
 
 Cache TTL 60 s în `sensa/hub.py`. Date Cboe/Yahoo: doar uz personal / cercetare.

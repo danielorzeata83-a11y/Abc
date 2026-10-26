@@ -11,14 +11,15 @@ _STRIKE_BAND = 0.15   # show GEX strikes within +/-15% of spot
 
 
 class Hub:
-    def __init__(self, cboe, news_fn, curve_fn, analyst=None, ttl=60,
+    def __init__(self, cboe, news_fn, curve_fn, analyst=None, edgar=None, ttl=60,
                  clock=time.monotonic, today=lambda: date.today().isoformat()):
         self.cboe, self.news_fn, self.curve_fn, self.analyst_src = cboe, news_fn, curve_fn, analyst
+        self.edgar = edgar
         self.ttl, self.clock, self.today, self._cache = ttl, clock, today, {}
 
-    def _cached(self, key, load):
+    def _cached(self, key, load, ttl=None):
         hit = self._cache.get(key)
-        if hit and self.clock() - hit[0] < self.ttl:
+        if hit and self.clock() - hit[0] < (self.ttl if ttl is None else ttl):
             return hit[1]
         val = load()
         self._cache[key] = (self.clock(), val)
@@ -58,6 +59,11 @@ class Hub:
                     "zero_dte": exp == self.today(), "cp": cp_ratio(near), "gex": g,
                     "chain": near}
         return self._cached(("o", s), load)
+
+    def insiders(self, symbol=None, limit=10):
+        if self.edgar is None:
+            raise DataUnavailable("EDGAR not configured (set SEC_CONTACT)")
+        return self._cached(("i", symbol, limit), lambda: self.edgar.recent(symbol, limit), ttl=300)
 
     def yield_curve(self):
         return self._cached(("y",), self.curve_fn)

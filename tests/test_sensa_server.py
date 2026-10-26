@@ -65,3 +65,20 @@ def test_provider_outage_maps_to_503_with_message():
 
 def test_unknown_path_is_404():
     assert _get("/nope")[0] == 404
+
+
+def test_insiders_endpoint_with_optional_symbol():
+    class H(FakeHub):
+        def insiders(self, symbol=None, limit=10):
+            return [{"symbol": symbol or "ANY"}]
+    server = srv.make_server(H(), "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        for path, want in (("/api/insiders", "ANY"), ("/api/insiders/aaa", "AAA")):
+            c.request("GET", path)
+            r = c.getresponse()
+            assert r.status == 200 and json.loads(r.read())[0]["symbol"] == want
+    finally:
+        server.shutdown()
+        server.server_close()
