@@ -297,7 +297,7 @@ def _tables(path, max_bytes):
 
 
 def build_overview(cur_zip, prev_zip, period, prev_period, top=100, figi=None,
-                   stocks_limit=300, flows_limit=100, max_member_bytes=_MAX_MEMBER):
+                   stocks_limit=300, flows_limit=100, max_member_bytes=_MAX_MEMBER, all_managers=None):
     """The cross-fund overview for the `top` biggest managers of `period`, compared with `prev_period`."""
     zc, oc = _tables(cur_zip, max_member_bytes)
     zp, op = _tables(prev_zip, max_member_bytes)
@@ -306,6 +306,8 @@ def build_overview(cur_zip, prev_zip, period, prev_period, top=100, figi=None,
         if not everyone:
             raise DataUnavailable(f"no 13F reports for {period} in {cur_zip}")
         managers = everyone[:top]
+        if all_managers is not None:
+            all_managers.extend({**m, "quarter": quarter_label(period)} for m in everyone)
         prev_managers = {m["cik"]: m for m in
                          select_managers(op("SUBMISSION.tsv"), op("COVERPAGE.tsv"), op("SUMMARYPAGE.tsv"), prev_period)}
         cur_h = load_holdings(oc("INFOTABLE.tsv"), {m["accession"]: m["cik"] for m in managers})
@@ -378,9 +380,27 @@ def refresh_overview(data_dir, listing_html, download, figi, top=100, force=Fals
             download(s["url"], tmp)
             os.replace(tmp, dest)
         paths.append(dest)
-    overview = build_overview(paths[0], paths[1], cur["period"], prev["period"], top=top, figi=figi)
+    everyone = []
+    overview = build_overview(paths[0], paths[1], cur["period"], prev["period"], top=top, figi=figi,
+                              all_managers=everyone)
+    _write_json(os.path.join(data_dir, "managers.json"), everyone)
     tmp = _overview_path(data_dir) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(overview, fh)
     os.replace(tmp, _overview_path(data_dir))
     return overview
+
+
+def _write_json(path, obj):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh)
+    os.replace(tmp, path)
+
+
+def load_managers(data_dir):
+    try:
+        with open(os.path.join(data_dir, "managers.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        raise DataUnavailable("No manager list yet. Press Update on the Smart Money page to build it.") from None

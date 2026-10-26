@@ -345,3 +345,62 @@ def test_fund_header_data_refreshes_after_ten_minutes_but_not_before():
     assert len(calls) == 1
     t[0] = 700.0; hub.manager("1")
     assert len(calls) == 2
+
+
+class Latest13F(Fake13F):
+    def __init__(self):
+        super().__init__()
+        self.cover_calls = []
+
+    def latest(self, limit=50, scan=100):
+        return [{"cik": "0000000001", "name": "Test Capital LP", "form": "13F-HR", "filed": "2026-10-26",
+                 "accession": "0000000001-26-000007"},
+                {"cik": "0000000002", "name": "Other Fund", "form": "13F-HR", "filed": "2026-10-25",
+                 "accession": "0000000002-26-000003"}][:limit]
+
+    def cover(self, cik, accession, filed=None):
+        self.cover_calls.append(accession)
+        return {"period": "2026-09-30", "quarter": "Q3 2026", "entries": 71 if accession.endswith("7") else 5,
+                "value": 297e6, "name": "n"}
+
+
+def test_latest_filings_adds_cover_data_registers_accessions_and_caches_on_disk(tmp_path):
+    f = Latest13F()
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f, figi=FakeFigi(), cache_dir=str(tmp_path))
+    rows = hub.latest_filings(10)
+    assert rows[0] == {"cik": "0000000001", "name": "Test Capital LP", "form": "13F-HR", "filed": "2026-10-26",
+                       "accession": "0000000001-26-000007", "quarter": "Q3 2026", "period": "2026-09-30",
+                       "entries": 71, "value": 297e6}
+    assert hub.cik_for_accession("000000000126000007") == ("0000000001", "0000000001-26-000007")
+    f2 = Latest13F()
+    Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f2, figi=FakeFigi(),
+        cache_dir=str(tmp_path)).latest_filings(10)
+    assert f2.cover_calls == []                         # covers came from disk
+
+
+def test_a_cover_that_fails_does_not_hide_the_row(tmp_path):
+    class Flaky(Latest13F):
+        def cover(self, cik, accession, filed=None):
+            raise DataUnavailable("sec slow")
+    rows = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=Flaky(), figi=FakeFigi()).latest_filings(10)
+    assert [r["name"] for r in rows] == ["Test Capital LP", "Other Fund"] and rows[0]["entries"] is None
+
+
+def test_filing_page_data_compares_with_the_prior_quarter_and_lists_holdings():
+    hub = mgr_hub()
+    hub.manager("1")                                    # registers the fund's accessions
+    d = hub.filing("A2")
+    assert d["name"] == "Test Capital LP" and d["quarter"] == "Q2 2026" and d["form"] == "13F-HR"
+    assert d["stats"]["value"] == 1000.0 and d["stats"]["positions"] == 3 and d["stats"]["value_change"] == 200.0
+    top = d["holdings"][0]
+    assert top["ticker"] == "AMZN" and top["weight"] == 60.0
+    assert top["change"] == {"type": "increased", "shares_delta": 10.0, "pct": 100.0}
+    new = next(h for h in d["holdings"] if h["ticker"] == "NEW")
+    assert new["change"]["type"] == "new" and new["change"]["pct"] is None
+    assert d["exited"][0]["issuer"] == "GONE INC"       # positions dropped since the previous filing
+
+
+def test_unknown_accession_is_reported_not_guessed():
+    import pytest as _p
+    with _p.raises(DataUnavailable, match="not found"):
+        mgr_hub().filing("999999999999999999")

@@ -66,6 +66,14 @@ def _safe_xml(text):
         raise DataUnavailable(f"bad XML: {e}") from e
 
 
+_ATOM13 = ("https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=13F-HR&company=&dateb=&owner=include"
+          "&start=0&count={count}&output=atom")
+_ATOM_NS = "{http://www.w3.org/2005/Atom}"
+_TITLE = re.compile(r"^(13F-HR(?:/A)?) - (.+?) \((\d{1,10})\) \((?:Filer|Subject)\)$")
+_ACC_LINK = re.compile(r"/data/\d+/(\d{10})(\d{2})(\d{6})/")
+_FILED = re.compile(r"Filed:.{0,30}?(\d{4}-\d{2}-\d{2})")
+
+
 class ThirteenF:
     def __init__(self, contact, fetch):
         self.contact, self.fetch = contact.strip(), fetch
@@ -74,6 +82,44 @@ class ThirteenF:
         if not self.contact:
             raise DataUnavailable("SEC_CONTACT not set (SEC requires a contact in the User-Agent)")
         return self.fetch(url, {"User-Agent": f"Abc-dashboard-research/1.0 {self.contact}"})
+
+    def latest(self, limit=50, scan=100):
+        """Newest 13F reports on EDGAR, one row per manager (their newest), newest first."""
+        feed = _safe_xml(self._get(_ATOM13.format(count=scan)))
+        out, seen = [], set()
+        for e in feed.iter(_ATOM_NS + "entry"):
+            t = _TITLE.match((e.findtext(_ATOM_NS + "title") or "").strip())
+            link = e.find(_ATOM_NS + "link")
+            a = _ACC_LINK.search(link.get("href", "") if link is not None else "")
+            if not t or not a:
+                continue
+            cik = f"{int(t.group(3)):010d}"
+            if cik in seen:
+                continue
+            seen.add(cik)
+            filed = _FILED.search(__import__("html").unescape(e.findtext(_ATOM_NS + "summary") or ""))
+            out.append({"cik": cik, "name": t.group(2), "form": t.group(1), "filed": filed.group(1) if filed else "",
+                        "accession": "-".join(a.groups())})
+            if len(out) >= limit:
+                break
+        return out
+
+    def cover(self, cik, accession, filed=None):
+        """Period, number of positions and total value of one report (from its primary_doc.xml)."""
+        base = _ARCH.format(cik=int(cik), acc=accession.replace("-", ""))
+        root = _safe_xml(self._get(base + "/primary_doc.xml"))
+        raw = (root.findtext(".//{*}reportCalendarOrQuarter") or root.findtext(".//{*}periodOfReport") or "").strip()
+        try:
+            mm, dd, yy = raw.split("-")
+            period = f"{int(yy):04d}-{int(mm):02d}-{int(dd):02d}"
+            entries = int(root.findtext(".//{*}tableEntryTotal") or 0)
+            value = float(root.findtext(".//{*}tableValueTotal") or 0)
+        except ValueError:
+            raise DataUnavailable(f"unreadable cover page for {accession}") from None
+        if filed and filed < _DOLLARS_SINCE:
+            value *= 1000.0
+        return {"period": period, "quarter": quarter_label(period), "entries": entries, "value": value,
+                "name": (root.findtext(".//{*}filingManager/{*}name") or "").strip()}
 
     def filer(self, cik):
         cik_i = int(cik)
@@ -121,9 +167,12 @@ class Figi:
     URL = "https://api.openfigi.com/v3/mapping"
     _KIND = {"Common Stock": "stock", "ETP": "etf", "ADR": "adr", "Depositary Receipt": "adr"}
 
-    def __init__(self, post, sleep=None, min_interval=0.0, cache_path=None):
+    def __init__(self, post, sleep=None, min_interval=0.0, cache_path=None, clock=None):
+        import threading
+        import time
         self.post, self.min_interval, self.cache_path = post, min_interval, cache_path
-        self._sleep = sleep or __import__("time").sleep
+        self._sleep, self._clock = sleep or time.sleep, clock or time.monotonic
+        self._lock, self._last = threading.Lock(), None
         self._map = {}
         if cache_path:
             try:
@@ -145,12 +194,21 @@ class Figi:
             pass                                        # a read-only disk must not break lookups
 
     def info(self, cusips):
+        with self._lock:                                  # one request at a time, spaced for the free rate limit
+            return self._info(cusips)
+
+    def _info(self, cusips):
         todo = [c for c in dict.fromkeys(cusips) if c not in self._map]
-        for n, i in enumerate(range(0, len(todo), 10)):
-            if n and self.min_interval:
-                self._sleep(self.min_interval)
+        for i in range(0, len(todo), 10):
+            if self.min_interval and self._last is not None:
+                wait = self.min_interval - (self._clock() - self._last)
+                if wait > 0:
+                    self._sleep(wait)
             batch = todo[i:i + 10]
-            res = json.loads(self.post(self.URL, [{"idType": "ID_CUSIP", "idValue": c} for c in batch]))
+            try:
+                res = json.loads(self.post(self.URL, [{"idType": "ID_CUSIP", "idValue": c} for c in batch]))
+            finally:
+                self._last = self._clock()
             for c, r in zip(batch, res):
                 data = r.get("data") or []
                 stocks = [d for d in data if d.get("securityType") == "Common Stock"] or data

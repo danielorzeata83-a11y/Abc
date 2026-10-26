@@ -231,7 +231,9 @@ _INST_BODY = r"""
    style="flex:1;min-width:180px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;font:inherit">
   <button class="btn on" type="submit">Open</button><span id="e" class="err"></span>
  </form>
- <section class="card"><h3>Examples</h3>__EXAMPLES__</section>
+ <section class="card"><h3>Browse</h3><p style="margin:.2rem 0 .8rem"><a href="/institutional-investor/latest-filings">Latest 13F filings →</a></p>
+  <div class="letters">__LETTERS__</div></section>
+ <section class="card" style="margin-top:1rem"><h3>Examples</h3>__EXAMPLES__</section>
 </div>
 """
 
@@ -247,7 +249,10 @@ def render_institutional():
     items = "".join(f'<div style="padding:.45rem 0;border-top:1px solid var(--line)">'
                     f'<a href="/institutional-investor/manager/{c}-{slug}">{name}</a> '
                     f'<span class="mut">CIK {c}</span></div>' for c, slug, name in EXAMPLES)
-    return shell("Institutional investors", "inst", _INST_BODY.replace("__EXAMPLES__", items), _INST_JS)
+    letters = "".join(f'<a href="/institutional-investor/managers/{c}">{"#" if c == "0" else c.upper()}</a>'
+                      for c in "abcdefghijklmnopqrstuvwxyz0")
+    body = _INST_BODY.replace("__EXAMPLES__", items).replace("__LETTERS__", letters)
+    return shell("Institutional investors", "inst", body, _INST_JS, _MANAGER_CSS + _LIST_CSS)
 
 
 # ------------------------------------------------------------------ alerts page
@@ -418,3 +423,127 @@ load();poll();
 
 def render_smart_money():
     return shell("Smart Money", "smart", _SM_BODY, _SM_JS, _MANAGER_CSS + _SM_CSS)
+
+
+# --------------------------------------------- managers A-Z, latest filings, one filing
+_COMMON_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const money=v=>{if(v==null)return '-';const a=Math.abs(v),s=a>=1e12?'$'+(a/1e12).toFixed(2)+'T':a>=1e9?'$'+(a/1e9).toFixed(2)+'B':a>=1e6?'$'+(a/1e6).toFixed(2)+'M':'$'+Math.round(a).toLocaleString();return (v<0?'-':'')+s};
+const fdate=d=>d?new Date(d+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}):'-';
+const isCik=c=>/^[0-9]{1,10}$/.test(c),isAcc=a=>/^[0-9]{10}-[0-9]{2}-[0-9]{6}$/.test(a);
+async function api(p){const r=await fetch(p),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+function mgrLink(name,cik){const d=el('td');if(isCik(cik)){const a=el('a',name);a.href='/institutional-investor/manager/'+cik;d.append(a)}else d.textContent=name;return d}
+function accHref(a){return '/institutional-investor/'+a.replace(/-/g,'')}
+function stat(k,v,d){const c=el('div',null,'card stat');c.append(el('div',k,'k'),el('div',v,'v'),el('div',d||'','d mut'));return c}
+"""
+
+_LIST_CSS = r"""
+.letters{display:flex;flex-wrap:wrap;gap:.3rem;margin:.8rem 0}.letters a,.letters b{padding:.25rem .55rem;border-radius:7px;border:1px solid var(--line);background:var(--card)}
+.letters b{background:var(--acc);border-color:var(--acc);color:#fff}
+input.q{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.45rem .7rem;font:inherit;min-width:240px}
+"""
+
+_MANAGERS_BODY = r"""
+<div class="wrap">
+ <div class="crumb"><a href="/institutional-investor">Institutional</a> &nbsp;›&nbsp; <b id="crumb">13F filers</b></div>
+ <h1 class="title" style="font-size:2rem" id="ttl">13F filers</h1>
+ <p class="mut">Institutional investment managers that file Form 13F with the SEC, by name.</p>
+ <div class="letters" id="letters"></div>
+ <div class="stats" id="stats"></div>
+ <div class="head"><input class="q" id="q" placeholder="Search all filers by name" aria-label="Search filers"><span id="msg" class="err"></span></div>
+ <section class="card"><div class="tbl"><table class="t"><thead><tr><th>Manager</th><th>Latest filing</th><th class="n">Holdings</th><th class="n">Portfolio value</th></tr></thead>
+ <tbody id="rows"></tbody></table></div>
+ <div class="pager"><span id="pg"></span><span><button class="btn" id="prev">‹</button> <button class="btn" id="next">›</button></span></div></section>
+</div>
+"""
+
+_MANAGERS_JS = r"""
+const LETTER="__LETTER__",PAGE=50;let offset=0,total=0,query='',timer=null;
+for(const l of 'abcdefghijklmnopqrstuvwxyz0'){const x=l===LETTER&&!query?el('b',l==='0'?'#':l.toUpperCase()):el('a',l==='0'?'#':l.toUpperCase());if(x.tagName==='A')x.href='/institutional-investor/managers/'+l;$('letters').append(x)}
+async function load(){try{const p='/api/managers?offset='+offset+'&limit='+PAGE+(query?'&q='+encodeURIComponent(query):'&letter='+LETTER);
+ const d=await api(p);total=d.total;$('msg').textContent='';
+ $('ttl').textContent=query?'Search: '+query:(LETTER==='0'?'#':LETTER.toUpperCase())+' 13F filers';
+ $('stats').replaceChildren(stat('Total filers',d.total.toLocaleString()),stat('Combined value',money(d.aum)),stat('Average holdings',String(d.avg_entries)));
+ const tb=$('rows');tb.replaceChildren();
+ for(const r of d.rows){const tr=el('tr');tr.append(mgrLink(r.name,r.cik),el('td',r.quarter||'-'),el('td',String(r.entries),'n'),el('td',money(r.aum),'n'));tr.children[2].classList.add('n');tr.children[3].classList.add('n');tb.append(tr)}
+ if(!d.rows.length){const tr=el('tr'),td=el('td','No filers found','mut');td.colSpan=4;tr.append(td);tb.append(tr)}
+ $('pg').textContent=total?(offset+1)+' – '+Math.min(offset+PAGE,total)+' of '+total.toLocaleString():'';
+ $('prev').disabled=offset===0;$('next').disabled=offset+PAGE>=total}catch(e){$('msg').textContent=e.message}}
+$('prev').onclick=()=>{offset=Math.max(0,offset-PAGE);load()};$('next').onclick=()=>{offset+=PAGE;load()};
+$('q').oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{query=e.target.value.trim();offset=0;load()},250)};
+load();
+"""
+
+_LATEST_BODY = r"""
+<div class="wrap">
+ <div class="crumb"><a href="/institutional-investor">Institutional</a> &nbsp;›&nbsp; <b>Latest filings</b></div>
+ <h1 class="title" style="font-size:2rem">Latest 13F filings</h1>
+ <p class="mut">Most recent 13F reports on SEC EDGAR, one row per manager, newest first. Refreshed every few minutes.</p>
+ <div id="msg" class="err"></div>
+ <section class="card"><div class="tbl"><table class="t"><thead><tr><th>Manager</th><th>Period</th><th>Date filed</th><th class="n">Holdings</th><th class="n">Value</th><th></th></tr></thead>
+ <tbody id="rows"><tr><td class="mut" colspan="6">Loading…</td></tr></tbody></table></div></section>
+</div>
+"""
+
+_LATEST_JS = r"""
+(async()=>{try{const rows=await api('/api/latest-filings?limit=100'),tb=$('rows');tb.replaceChildren();
+ for(const r of rows){const tr=el('tr'),n=mgrLink(r.name,r.cik);n.append(el('div','CIK '+r.cik,'mut'));
+  const v=el('td');if(isAcc(r.accession)){const a=el('a','View');a.href=accHref(r.accession);v.append(a)}
+  const ent=el('td',r.entries==null?'-':String(r.entries),'n'),val=el('td',money(r.value),'n');ent.classList.add('n');val.classList.add('n');
+  tr.append(n,el('td',(r.quarter||'-')+(r.form==='13F-HR/A'?' (amended)':'')),el('td',fdate(r.filed)),ent,val,v);tb.append(tr)}
+ }catch(e){$('rows').replaceChildren();$('msg').textContent=e.message}})();
+"""
+
+_FILING_BODY = r"""
+<div class="wrap">
+ <div class="crumb"><a href="/institutional-investor">Institutional</a> &nbsp;›&nbsp; <a id="mlink">Manager</a> &nbsp;›&nbsp; <b id="crumb">…</b></div>
+ <h1 class="title" id="name" style="font-size:2rem">Loading…</h1>
+ <div class="badges"><span>Institutional</span><span id="formb">13F</span></div>
+ <div class="meta"><div><span>Location</span><b id="loc">-</b></div><div><span>CIK</span><b id="cik">-</b></div>
+  <div><span>Date filed</span><b id="filed">-</b></div><div><span>SEC filing</span><a id="sec" target="_blank" rel="noopener noreferrer">View on sec.gov ↗</a></div></div>
+ <div id="msg" class="err"></div>
+ <div class="stats" id="stats"></div>
+ <section class="card"><h3 id="hh">Holdings</h3><div class="tbl"><table class="t"><thead><tr><th>Ticker</th><th>Company</th><th class="n">Shares</th><th class="n">Value</th><th class="n">Weight</th><th>Change</th></tr></thead>
+ <tbody id="rows"></tbody></table></div><p class="note" id="trunc"></p></section>
+ <section class="card" style="margin-top:1rem" id="exitedcard" hidden><h3>Closed since the previous quarter</h3><div id="exited"></div></section>
+</div>
+"""
+
+_FILING_JS = r"""
+const ACC="__ACC__";
+(async()=>{try{const d=await api('/api/filing/'+ACC);
+ document.title=d.name+' - '+d.quarter+' 13F holdings';
+ $('name').textContent=d.name+' · '+d.quarter;$('crumb').textContent=d.quarter;$('formb').textContent=d.form;
+ $('loc').textContent=d.location||'-';$('cik').textContent=d.cik;$('filed').textContent=fdate(d.filed);
+ if(isCik(d.cik)){$('mlink').href='/institutional-investor/manager/'+d.cik;$('mlink').textContent=d.name}
+ if(isCik(d.cik)&&isAcc(d.accession))$('sec').href='https://www.sec.gov/Archives/edgar/data/'+parseInt(d.cik,10)+'/'+d.accession.replace(/-/g,'')+'/';
+ const s=d.stats,up=s.value_change>=0;
+ $('stats').replaceChildren(stat('Portfolio value',money(s.value),s.value_change==null?'':(up?'↑ ':'↓ ')+money(Math.abs(s.value_change))+' ('+(s.value_change_pct>0?'+':'')+s.value_change_pct+'%) vs '+d.prev_quarter),
+  stat('Positions',String(s.positions),s.positions_change==null?'':(s.positions_change>=0?'↑ ':'↓ ')+Math.abs(s.positions_change)+' vs '+d.prev_quarter),
+  stat('Period',d.period,d.form),stat('Top position',d.holdings[0]?d.holdings[0].ticker:'-',d.holdings[0]?d.holdings[0].weight+'% of portfolio':''));
+ const tb=$('rows');tb.replaceChildren();
+ for(const h of d.holdings){const tr=el('tr'),t=el('td'),b=el('b',h.ticker);t.append(b);
+  const ch=el('td');if(h.change){const k=h.change.type,sign=h.change.shares_delta>0?'+':'';
+   ch.append(el('span',k.toUpperCase(),'chip pill'),document.createTextNode(' '+sign+Math.round(h.change.shares_delta).toLocaleString()+' sh'+(h.change.pct==null?'':' ('+(h.change.pct>0?'+':'')+h.change.pct+'%)')));
+   ch.className=k==='new'||k==='increased'?'up':'dn'}else ch.textContent='-';
+  const sh=el('td',Math.round(h.shares).toLocaleString(),'n'),va=el('td',money(h.value),'n'),we=el('td',h.weight.toFixed(2)+'%','n');
+  tr.append(t,el('td',h.issuer),sh,va,we,ch);tb.append(tr)}
+ $('trunc').textContent=d.truncated?'Showing the 100 largest positions.':'';
+ if(d.exited.length){$('exitedcard').hidden=false;const box=$('exited');box.replaceChildren();
+  for(const x of d.exited.slice(0,20)){const r=el('div',null,'alloc-row');r.append(el('span',x.issuer,'nm'),el('span',money(x.value),'w'));box.append(r)}}
+ }catch(e){$('name').textContent='Filing not available';$('msg').textContent=e.message}})();
+"""
+
+
+def render_managers(letter):
+    return shell("13F filers", "inst", _MANAGERS_BODY, _COMMON_JS + _MANAGERS_JS.replace("__LETTER__", letter),
+                 _MANAGER_CSS + _LIST_CSS)
+
+
+def render_latest_filings():
+    return shell("Latest 13F filings", "inst", _LATEST_BODY, _COMMON_JS + _LATEST_JS, _MANAGER_CSS + _LIST_CSS)
+
+
+def render_filing(acc18):
+    return shell("13F filing", "inst", _FILING_BODY, _COMMON_JS + _FILING_JS.replace("__ACC__", acc18), _MANAGER_CSS)

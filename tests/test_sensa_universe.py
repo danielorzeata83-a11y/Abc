@@ -435,3 +435,21 @@ def test_a_stock_that_suddenly_appears_at_many_funds_is_flagged_new_listing():
     assert stock(aggregate_stocks(cur, prev), "SPIN")["new_listing"] is False
     small = {f"S{i}": [h("T", 1, 1)] for i in range(10)}
     assert stock(aggregate_stocks(small, {k: [h("OLD", 1, 1)] for k in small}), "T")["new_listing"] is False   # too few funds
+
+
+from sensa.universe import load_managers
+
+
+def test_refresh_also_saves_every_filer_not_just_the_top_n(tmp_path):
+    def download(url, dest):
+        funds = {f"000000000{i}": (f"A{i}", f"Fund {i}", 1000 - i, [("ALPHA", "A", 10, 1)]) for i in range(1, 6)}
+        make_zip(dest, "2026-06-30" if "01jun2026" in url else "2026-03-31", funds)
+    refresh_overview(str(tmp_path), LISTING, download, FakeInfo(), top=2)
+    allm = load_managers(str(tmp_path))
+    assert len(allm) == 5 and allm[0]["name"] == "Fund 1" and allm[0]["quarter"] == "Q2 2026"
+    assert set(allm[0]) >= {"cik", "name", "state", "aum", "entries", "accession", "filed", "form", "quarter"}
+
+
+def test_load_managers_without_a_build_explains_what_to_do(tmp_path):
+    with pytest.raises(DataUnavailable, match="Update"):
+        load_managers(str(tmp_path))

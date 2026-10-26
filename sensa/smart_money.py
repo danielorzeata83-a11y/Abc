@@ -7,7 +7,7 @@ A new quarter produces one summary message for `notify` (e.g. Telegram)."""
 import threading
 
 from markov.data_providers import DataUnavailable
-from sensa.universe import load_overview, refresh_overview
+from sensa.universe import load_managers, load_overview, refresh_overview
 
 
 def _money(v):
@@ -55,6 +55,32 @@ class OverviewService:
             raise DataUnavailable("No Smart Money overview yet. Press Update to build it from SEC data "
                                   "(a few minutes the first time).") from None
 
+    def managers(self):
+        return load_managers(self.data_dir)
+
+    def lookup_accession(self, key):
+        """(cik, dashed accession) of a filing in the saved manager list, by its 18-digit form."""
+        try:
+            idx = self._acc_index
+        except AttributeError:
+            idx = None
+        if idx is None or idx[0] is not self._managers_obj():
+            ms = self._managers_obj()
+            idx = (ms, {m["accession"].replace("-", "").lower(): (m["cik"], m["accession"]) for m in ms})
+            self._acc_index = idx
+        return idx[1].get(key)
+
+    def _managers_obj(self):
+        try:
+            return self._ms
+        except AttributeError:
+            pass
+        try:
+            self._ms = load_managers(self.data_dir)
+        except DataUnavailable:
+            return []
+        return self._ms
+
     def status(self):
         with self._lock:
             st = dict(self._state)
@@ -68,6 +94,8 @@ class OverviewService:
     def check(self, force=False):
         """Rebuild if SEC published a newer quarter. Returns the new overview or None (already current)."""
         o = refresh_overview(self.data_dir, self.fetch_listing(), self.download, self.figi, top=self.top, force=force)
+        if o is not None:
+            self.__dict__.pop("_ms", None)        # the manager list changed: reload it on next use
         if o is not None and self.notify is not None:
             try:
                 self.notify(format_summary(o))

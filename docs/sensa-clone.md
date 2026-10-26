@@ -56,6 +56,17 @@ Ce înseamnă cifrele (și ce corectez, ca să nu inducă în eroare):
   fond (ex. +93%) pot veni din schimbarea structurii depunerii (entități combinate), nu din piață. Amendamentele care doar adaugă
   poziții nu sunt incluse.
 
+## Paginile instituționale (după structura originalului)
+- `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
+- `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru
+  publicat în setul SEC, cu total, valoare cumulată, număr mediu de poziții și căutare după nume.
+- `/institutional-investor/latest-filings`: cele mai noi rapoarte 13F de pe EDGAR (un rând per manager), cu perioadă, poziții și valoare
+  din pagina de copertă (deja apar rapoarte Q3 2026).
+- `/institutional-investor/<accession>`: un singur raport: valoare, poziții, fiecare poziție cu modificarea față de trimestrul
+  anterior (nou / crescut / redus) și pozițiile închise. Accesiunile se rețin în `data/13f/accessions.json`.
+- Observație de date: unii declaranți raportează valoarea în mii de dolari și după 2023, iar setul SEC o păstrează așa;
+  cifre ca „$156,245 pentru 104 poziții" sunt erori ale declarantului, nu ale aplicației.
+
 ## Alerte Smart Money (`/smart-money/alerts`)
 Urmărești fonduri după CIK (buton **Follow** pe profilul fondului sau pe pagina de alerte). Când un fond depune un
 13F nou, aplicația compară cu trimestrul anterior și creează un **semnal**: poziții noi, ieșite, crescute, reduse

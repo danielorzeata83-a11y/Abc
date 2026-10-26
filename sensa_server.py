@@ -24,11 +24,15 @@ from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_post, yahoo_news
 from sensa.thirteenf import Figi, ThirteenF
 from sensa.watch import Watcher
-from sensa.ui import BASE_CSS, nav, render_alerts, render_institutional, render_manager, render_smart_money
+from sensa.managers import browse
+from sensa.ui import (BASE_CSS, nav, render_alerts, render_filing, render_institutional, render_latest_filings,
+                      render_manager, render_managers, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 _CIK = re.compile(r"^[0-9]{1,10}$")
+_ACC18 = re.compile(r"^[0-9]{18}$")
+_LETTER = re.compile(r"^[a-z0]$")
 _MGR_PAGE = re.compile(r"^([0-9]{1,10})(?:-[a-z0-9\-]{0,100})?$")
 DEFAULT_WATCHLIST = ("AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "SPY", "QQQ")
 
@@ -219,6 +223,56 @@ def _make_handler(hub, watchlist, watcher=None, smart=None):
                 return
             if u.path.rstrip("/") == "/institutional-investor":
                 self._send(200, render_institutional(), "text/html; charset=utf-8")
+                return
+            if len(parts) == 3 and parts[:2] == ["institutional-investor", "managers"]:
+                if not _LETTER.match(parts[2].lower()):
+                    self._send(404, "not found", "text/plain")
+                    return
+                self._send(200, render_managers(parts[2].lower()), "text/html; charset=utf-8")
+                return
+            if parts == ["institutional-investor", "latest-filings"]:
+                self._send(200, render_latest_filings(), "text/html; charset=utf-8")
+                return
+            if len(parts) == 2 and parts[0] == "institutional-investor" and _ACC18.match(parts[1]):
+                self._send(200, render_filing(parts[1]), "text/html; charset=utf-8")
+                return
+            if u.path == "/api/managers":
+                if smart is None:
+                    self._json(503, {"error": "manager list is not configured (set SEC_CONTACT)"})
+                    return
+                q = parse_qs(u.query)
+                try:
+                    off, lim = int((q.get("offset") or ["0"])[0]), int((q.get("limit") or ["50"])[0])
+                except ValueError:
+                    self._json(400, {"error": "bad paging"})
+                    return
+                letter = (q.get("letter") or [""])[0].lower()
+                query = (q.get("q") or [""])[0][:60]
+                if not query and not _LETTER.match(letter):
+                    self._json(400, {"error": "letter must be a-z or 0"})
+                    return
+                try:
+                    self._json(200, browse(smart.managers(), letter, off, lim, query or None))
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
+                return
+            if u.path == "/api/latest-filings":
+                try:
+                    lim = min(100, max(1, int((parse_qs(u.query).get("limit") or ["50"])[0])))
+                    self._json(200, hub.latest_filings(lim))
+                except ValueError:
+                    self._json(400, {"error": "bad limit"})
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
+                return
+            if len(parts) == 3 and parts[:2] == ["api", "filing"]:
+                if not _ACC18.match(parts[2]):
+                    self._json(400, {"error": "bad accession"})
+                    return
+                try:
+                    self._json(200, hub.filing(parts[2]))
+                except DataUnavailable as e:
+                    self._json(404 if "not found" in str(e) else 503, {"error": str(e)})
                 return
             if len(parts) == 3 and parts[0] == "institutional-investor" and parts[1] == "manager":
                 m = _MGR_PAGE.match(parts[2].lower())
@@ -419,6 +473,8 @@ def main():
     hub = build_hub()
     watcher = build_watcher(hub)
     smart = build_smart(os.environ.get("SEC_CONTACT", "").strip())
+    if smart is not None:
+        hub.accession_lookup = smart.lookup_accession
     srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart)
     if smart is not None and a.smart_hours > 0:
         import threading

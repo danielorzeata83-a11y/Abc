@@ -203,7 +203,8 @@ def test_figi_info_returns_ticker_and_kind_for_stock_etf_and_adr():
 
 def test_figi_throttles_between_batches_to_respect_the_free_rate_limit():
     sleeps = []
-    f = Figi(post=lambda u, p: json.dumps([{"warning": "none"} for _ in p]), sleep=sleeps.append, min_interval=2.5)
+    f = Figi(post=lambda u, p: json.dumps([{"warning": "none"} for _ in p]), sleep=sleeps.append, min_interval=2.5,
+             clock=lambda: 0.0)                       # frozen clock: each batch waits the full interval
     f.lookup([f"C{i:02d}" for i in range(25)])        # 3 batches
     assert sleeps == [2.5, 2.5]                        # between batches, not before the first
 
@@ -243,3 +244,99 @@ def test_figi_keeps_class_share_tickers_like_brk_b():
     def post(url, payload):
         return json.dumps([{"data": [{"ticker": "BRK/B", "exchCode": "US", "securityType": "Common Stock"}]}])
     assert Figi(post=post).lookup(["X"]) == {"X": "BRK/B"}
+
+
+ATOM13 = """<?xml version="1.0" encoding="ISO-8859-1" ?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<entry><title>13F-HR - E6 Portfolios, LLC (0002110817) (Filer)</title>
+<link rel="alternate" type="text/html" href="https://www.sec.gov/Archives/edgar/data/2110817/000211081726000006/0002110817-26-000006-index.htm"/>
+<summary type="html"> &lt;b&gt;Filed:&lt;/b&gt; 2026-10-26 &lt;b&gt;AccNo:&lt;/b&gt; 0002110817-26-000006 &lt;b&gt;Size:&lt;/b&gt; 50 KB</summary></entry>
+<entry><title>13F-HR/A - Old Fund LP (0000000555) (Filer)</title>
+<link rel="alternate" href="https://www.sec.gov/Archives/edgar/data/555/000000055526000001/0000000555-26-000001-index.htm"/>
+<summary type="html"> &lt;b&gt;Filed:&lt;/b&gt; 2026-10-24 &lt;b&gt;AccNo:&lt;/b&gt; 0000000555-26-000001 &lt;b&gt;Size:&lt;/b&gt; 5 KB</summary></entry>
+<entry><title>13F-HR - E6 Portfolios, LLC (0002110817) (Filer)</title>
+<link rel="alternate" href="https://www.sec.gov/Archives/edgar/data/2110817/000211081726000005/0002110817-26-000005-index.htm"/>
+<summary type="html"> &lt;b&gt;Filed:&lt;/b&gt; 2026-10-20 &lt;b&gt;AccNo:&lt;/b&gt; 0002110817-26-000005 &lt;b&gt;Size:&lt;/b&gt; 40 KB</summary></entry>
+<entry><title>13F-HR - Broken entry without link</title></entry>
+</feed>"""
+
+PRIMARY = """<?xml version="1.0" encoding="UTF-8"?>
+<edgarSubmission xmlns="http://www.sec.gov/edgar/thirteenffiler" xmlns:com="http://www.sec.gov/edgar/common">
+ <headerData><submissionType>13F-HR</submissionType><filerInfo><periodOfReport>09-30-2026</periodOfReport></filerInfo></headerData>
+ <formData><coverPage><reportCalendarOrQuarter>09-30-2026</reportCalendarOrQuarter>
+  <filingManager><name>E6 Portfolios, LLC</name></filingManager></coverPage>
+  <summaryPage><otherIncludedManagersCount>0</otherIncludedManagersCount>
+   <tableEntryTotal>71</tableEntryTotal><tableValueTotal>297040000</tableValueTotal></summaryPage></formData>
+</edgarSubmission>"""
+
+
+def test_latest_lists_newest_filings_one_per_manager_with_cik_accession_and_date():
+    class F(FakeSec):
+        def __call__(self, url, headers=None):
+            return ATOM13 if "browse-edgar" in url else super().__call__(url, headers)
+    rows = ThirteenF("me@example.com", fetch=F()).latest(limit=10)
+    assert [(r["cik"], r["accession"], r["filed"], r["form"]) for r in rows] == [
+        ("0002110817", "0002110817-26-000006", "2026-10-26", "13F-HR"),
+        ("0000000555", "0000000555-26-000001", "2026-10-24", "13F-HR/A")]
+    assert rows[0]["name"] == "E6 Portfolios, LLC"            # the older filing of the same manager is dropped
+
+
+def test_latest_respects_the_limit_and_requires_contact():
+    class F(FakeSec):
+        def __call__(self, url, headers=None):
+            return ATOM13
+    assert len(ThirteenF("me@example.com", fetch=F()).latest(limit=1)) == 1
+    with pytest.raises(DataUnavailable, match="SEC_CONTACT"):
+        ThirteenF("", fetch=F()).latest()
+
+
+def test_cover_reads_period_holdings_count_and_value_from_primary_doc():
+    class F(FakeSec):
+        def __call__(self, url, headers=None):
+            self.calls.append((url, headers or {}))
+            if url.endswith("/primary_doc.xml"):
+                return PRIMARY
+            raise DataUnavailable("404")
+    sec = F()
+    c = ThirteenF("me@example.com", fetch=sec).cover("2110817", "0002110817-26-000006")
+    assert c == {"period": "2026-09-30", "quarter": "Q3 2026", "entries": 71, "value": 297040000.0,
+                 "name": "E6 Portfolios, LLC"}
+    assert "/data/2110817/000211081726000006/primary_doc.xml" in sec.calls[0][0]
+
+
+def test_cover_scales_old_filings_reported_in_thousands():
+    class F(FakeSec):
+        def __call__(self, url, headers=None):
+            return PRIMARY.replace("09-30-2026", "09-30-2022")
+    c = ThirteenF("me@example.com", fetch=F()).cover("1", "0000000001-22-000001", filed="2022-11-14")
+    assert c["value"] == 297040000.0 * 1000
+
+
+def test_figi_rate_limit_is_global_across_separate_lookup_calls():
+    sleeps, now = [], [100.0]
+
+    def sleep(s):
+        sleeps.append(round(s, 3))
+        now[0] += s
+    f = Figi(post=lambda u, p: json.dumps([{"warning": "none"} for _ in p]), sleep=sleep,
+             min_interval=2.5, clock=lambda: now[0])
+    f.lookup(["A1"])                       # first request: no wait
+    now[0] += 1.0                          # 1s later another page asks for a different cusip
+    f.lookup(["B1"])
+    now[0] += 5.0                          # long enough ago: no wait needed
+    f.lookup(["C1"])
+    assert sleeps == [1.5]
+
+
+def test_figi_is_safe_to_call_from_several_threads():
+    import threading
+    posts = []
+
+    def post(url, payload):
+        posts.append([p["idValue"] for p in payload])
+        return json.dumps([{"data": [{"ticker": "T", "exchCode": "US", "securityType": "Common Stock"}]} for _ in payload])
+    f = Figi(post=post, sleep=lambda s: None, min_interval=0.0)
+    ts = [threading.Thread(target=f.lookup, args=([f"C{i}"],)) for i in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert sorted(x for p in posts for x in p) == sorted(f"C{i}" for i in range(8))

@@ -235,7 +235,8 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
         import pytest
         pytest.skip("node not installed")
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
-             srv.render_smart_money()]
+             srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
+             srv.render_filing("000000000126000007")]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -405,3 +406,85 @@ def test_smart_money_overview_missing_build_is_503_with_the_hint():
             raise DataUnavailable("No Smart Money overview yet. Press Update")
     st, body, _ = _smart_req("GET", "/api/smart-money/overview", smart=Empty())
     assert st == 503 and "Press Update" in json.loads(body)["error"]
+
+
+class RouteHub(FakeHub):
+    def latest_filings(self, limit=50):
+        return [{"cik": "0000000001", "name": "E6 Portfolios", "form": "13F-HR", "filed": "2026-10-26",
+                 "accession": "0000000001-26-000007", "quarter": "Q3 2026", "period": "2026-09-30",
+                 "entries": 71, "value": 297e6, "lim": limit}]
+
+    def filing(self, accession):
+        if accession == "999999999999999999":
+            raise DataUnavailable("filing not found: open it from the manager page")
+        return {"name": "Test Capital LP", "accession": accession, "holdings": [], "exited": [], "stats": {}}
+
+
+class RouteSmart(FakeSmart):
+    def managers(self):
+        return [{"cik": "0000000001", "name": "Alpha Fund", "state": "NY", "aum": 10.0, "entries": 4, "quarter": "Q2 2026",
+                 "accession": "a", "filed": "2026-08-14", "form": "13F-HR"},
+                {"cik": "0000000002", "name": "Beta Fund", "state": "CA", "aum": 20.0, "entries": 6, "quarter": "Q2 2026",
+                 "accession": "b", "filed": "2026-08-14", "form": "13F-HR"}]
+
+
+def _route(path, smart=None, hub=None):
+    server = srv.make_server(hub or RouteHub(), "127.0.0.1", 0, ["AAA"], smart=smart or RouteSmart())
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", path)
+        r = c.getresponse()
+        return r.status, r.getheader("Content-Type"), r.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_new_institutional_pages_render_html():
+    for path, needle in (("/institutional-investor/managers/a", b"13F filers"),
+                         ("/institutional-investor/managers/0", b"13F filers"),
+                         ("/institutional-investor/latest-filings", b"Latest 13F filings"),
+                         ("/institutional-investor/000000000126000007", b"000000000126000007")):
+        st, ct, body = _route(path)
+        assert st == 200 and ct.startswith("text/html") and needle in body, path
+
+
+def test_new_institutional_pages_reject_bad_identifiers():
+    for path in ("/institutional-investor/managers/ab", "/institutional-investor/managers/%3Cx%3E",
+                 "/institutional-investor/12345", "/institutional-investor/00012345678901234567x"):
+        assert _route(path)[0] == 404, path
+
+
+def test_managers_api_pages_and_searches_the_saved_list():
+    st, _, body = _route("/api/managers?letter=a")
+    d = json.loads(body)
+    assert st == 200 and d["total"] == 1 and d["rows"][0]["name"] == "Alpha Fund"
+    d = json.loads(_route("/api/managers?q=fund&limit=1&offset=1")[2])
+    assert d["total"] == 2 and [r["name"] for r in d["rows"]] == ["Beta Fund"]
+    assert _route("/api/managers?letter=a&offset=abc")[0] == 400
+
+
+def test_latest_filings_and_filing_api():
+    st, _, body = _route("/api/latest-filings?limit=500")
+    assert st == 200 and json.loads(body)[0]["lim"] <= 100
+    st, _, body = _route("/api/filing/000000000126000007")
+    assert st == 200 and json.loads(body)["name"] == "Test Capital LP"
+    st, _, body = _route("/api/filing/999999999999999999")
+    assert st == 404 and "not found" in json.loads(body)["error"]
+    assert _route("/api/filing/12")[0] == 400
+
+
+def test_managers_api_is_503_without_a_built_list():
+    class Empty(RouteSmart):
+        def managers(self):
+            raise DataUnavailable("No manager list yet. Press Update")
+    st, body = _route("/api/managers?letter=a", smart=Empty())[0], _route("/api/managers?letter=a", smart=Empty())[2]
+    assert st == 503 and "Press Update" in json.loads(body)["error"]
+
+
+def test_institutional_landing_links_latest_filings_and_every_letter():
+    body = _route("/institutional-investor")[2]
+    assert b"/institutional-investor/latest-filings" in body
+    assert b"/institutional-investor/managers/a" in body and b"/institutional-investor/managers/z" in body
+    assert b"/institutional-investor/managers/0" in body
