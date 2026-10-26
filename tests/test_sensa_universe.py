@@ -453,3 +453,18 @@ def test_refresh_also_saves_every_filer_not_just_the_top_n(tmp_path):
 def test_load_managers_without_a_build_explains_what_to_do(tmp_path):
     with pytest.raises(DataUnavailable, match="Update"):
         load_managers(str(tmp_path))
+
+
+def test_refresh_also_builds_the_holders_index(tmp_path):
+    from sensa.holders import holders_for_cusip
+    log = []
+    refresh_overview(str(tmp_path), LISTING, fake_download_factory(tmp_path, log), FakeInfo(), top=10)
+    assert (tmp_path / "holders.db").exists()
+
+
+def test_refresh_builds_a_missing_holders_index_even_for_a_current_quarter(tmp_path):
+    log = []
+    refresh_overview(str(tmp_path), LISTING, fake_download_factory(tmp_path, log), FakeInfo(), top=10)
+    (tmp_path / "holders.db").unlink()
+    assert refresh_overview(str(tmp_path), LISTING, fake_download_factory(tmp_path, log), FakeInfo(), top=10) is None
+    assert (tmp_path / "holders.db").exists() and len(log) == 2

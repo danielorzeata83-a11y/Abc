@@ -368,7 +368,8 @@ def refresh_overview(data_dir, listing_html, download, figi, top=100, force=Fals
         stored = load_overview(data_dir)
     except DataUnavailable:
         stored = None
-    if stored and stored.get("period") == cur["period"] and not force:
+    db = os.path.join(data_dir, "holders.db")
+    if stored and stored.get("period") == cur["period"] and not force and os.path.exists(db):
         return None
     zdir = os.path.join(data_dir, "zips")
     os.makedirs(zdir, exist_ok=True)
@@ -380,6 +381,10 @@ def refresh_overview(data_dir, listing_html, download, figi, top=100, force=Fals
             download(s["url"], tmp)
             os.replace(tmp, dest)
         paths.append(dest)
+    from sensa.holders import build_holders_db
+    build_holders_db(paths[0], paths[1], cur["period"], prev["period"], db)
+    if stored and stored.get("period") == cur["period"] and not force:
+        return None                                   # only the investor index was missing
     everyone = []
     overview = build_overview(paths[0], paths[1], cur["period"], prev["period"], top=top, figi=figi,
                               all_managers=everyone)
