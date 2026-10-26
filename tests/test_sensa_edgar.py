@@ -98,3 +98,26 @@ def test_edgar_symbol_filter():
 def test_edgar_requires_contact():
     with pytest.raises(DataUnavailable, match="SEC_CONTACT"):
         Edgar("", fetch=FakeSec()).recent()
+
+
+def test_edgar_same_filing_listed_for_issuer_and_owner_counts_once():
+    dup = ATOM.replace("</feed>", f'<entry><title>4 - Acme (Issuer)</title>'
+                       f'<link rel="alternate" href="{DIR}/0001111111-26-000001-index.htm"/></entry></feed>')
+
+    class Dup(FakeSec):
+        def __call__(self, url, headers=None):
+            return dup if "browse-edgar" in url else super().__call__(url, headers)
+    assert len(Edgar("me@example.com", fetch=Dup()).recent()) == 1
+
+
+def test_edgar_identical_trade_in_two_different_filings_is_shown_once():
+    atom2 = ATOM.replace("0002222222-26-000002", "0002222222-26-000002")  # second filing, same content
+
+    class Same(FakeSec):
+        def __call__(self, url, headers=None):
+            if "browse-edgar" in url:
+                return atom2
+            if url.endswith("/index.json"):
+                return json.dumps({"directory": {"item": [{"name": "f.xml"}]}})
+            return FORM4        # both filings carry the very same transaction
+    assert len(Edgar("me@example.com", fetch=Same()).recent()) == 1

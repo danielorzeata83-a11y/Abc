@@ -65,18 +65,25 @@ class Edgar:
         if not self.contact:
             raise DataUnavailable("SEC_CONTACT not set (SEC requires a contact in the User-Agent)")
         feed = _safe_parse(self._get(FEED.format(count=scan)))
-        trades = []
+        trades, seen, seen_tx = [], set(), set()
         for entry in feed.iter(_ATOM + "entry"):
             link = entry.find(_ATOM + "link")
             href = link.get("href", "") if link is not None else ""
             if not href.endswith("-index.htm"):
                 continue
             base = href.rsplit("/", 1)[0]
+            if base in seen:     # EDGAR lists a filing once per filer (issuer + owner)
+                continue
+            seen.add(base)
             try:
                 items = json.loads(self._get(base + "/index.json"))["directory"]["item"]
                 name = next(i["name"] for i in items
                             if i["name"].endswith(".xml") and "/" not in i["name"])
-                trades += parse_form4(self._get(f"{base}/{name}"))
+                for t in parse_form4(self._get(f"{base}/{name}")):
+                    key = tuple(t[k] for k in ("symbol", "owner", "date", "side", "shares", "price"))
+                    if key not in seen_tx:      # joint/amended filings repeat identical trades
+                        seen_tx.add(key)
+                        trades.append(t)
             except (DataUnavailable, StopIteration, KeyError, ValueError):
                 continue    # one bad filing must not hide the rest
             if symbol and trades and len([t for t in trades if t["symbol"] == symbol.upper()]) >= limit:
