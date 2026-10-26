@@ -193,6 +193,11 @@ class Figi:
         except OSError:
             pass                                        # a read-only disk must not break lookups
 
+    def cusips_for(self, ticker):
+        """CUSIPs already looked up whose ticker is `ticker` (no network)."""
+        with self._lock:
+            return [c for c, v in self._map.items() if v and v.get("ticker") == ticker]
+
     def info(self, cusips):
         with self._lock:                                  # one request at a time, spaced for the free rate limit
             return self._info(cusips)

@@ -151,3 +151,11 @@ def cusips_by_issuer(db_path, prefix, limit=30):
                ON t.cusip = i.cusip WHERE i.issuer LIKE ? ESCAPE '\\' ORDER BY COALESCE(t.v, 0) DESC LIMIT ?""", (p + "%", limit))]
     finally:
         con.close()
+
+
+def has_holders(db_path, cusip):
+    con = _connect(db_path)
+    try:
+        return con.execute("SELECT 1 FROM h WHERE cusip = ? AND q = 0 LIMIT 1", (cusip,)).fetchone() is not None
+    finally:
+        con.close()
