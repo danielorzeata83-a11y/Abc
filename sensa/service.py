@@ -2,15 +2,24 @@
 call/put ratio, yield curve. Providers feed these; tests need no network."""
 
 
+def _change_pct(q):
+    """Prefer the provider's own day change; fall back to price vs prev_close."""
+    if q.get("change_pct") is not None:
+        return round(q["change_pct"], 2)
+    price, prev = q.get("price"), q.get("prev_close")
+    if not price or not prev or prev <= 0:
+        return None
+    return round((price - prev) / prev * 100, 2)
+
+
 def movers(quotes, n=10):
     """quotes: {sym: {"price", "prev_close"}} -> top-n gainers / losers by % change."""
     rows = []
     for sym, q in quotes.items():
-        price, prev = q.get("price"), q.get("prev_close")
-        if not price or not prev or prev <= 0:
+        chg = _change_pct(q)
+        if chg is None or not q.get("price"):
             continue
-        rows.append({"symbol": sym, "price": price,
-                     "change_pct": round((price - prev) / prev * 100, 2)})
+        rows.append({"symbol": sym, "price": q["price"], "change_pct": chg})
     rows.sort(key=lambda r: r["change_pct"], reverse=True)
     losers = sorted(rows, key=lambda r: r["change_pct"])[:n]
     return {"gainers": [r for r in rows[:n] if r["change_pct"] > 0],
@@ -63,3 +72,17 @@ def gex(chain, spot):
         by[o["strike"]] = by.get(o["strike"], 0.0) + val
     return {"call_gex": call, "put_gex": put, "net_gex": call + put,
             "by_strike": [{"strike": k, "gex": round(v, 2)} for k, v in sorted(by.items())]}
+
+
+SECTOR_ETFS = {"XLK": "Technology", "XLF": "Financials", "XLV": "Health Care",
+               "XLY": "Consumer Discretionary", "XLP": "Consumer Staples", "XLE": "Energy",
+               "XLI": "Industrials", "XLB": "Materials", "XLU": "Utilities",
+               "XLRE": "Real Estate", "XLC": "Communication Services"}
+
+
+def sector_heatmap(quotes):
+    """SPDR sector-ETF quotes -> sectors ordered best to worst by % change."""
+    rows = [{"symbol": s, "sector": SECTOR_ETFS[s], "change_pct": _change_pct(q)}
+            for s, q in quotes.items()
+            if s in SECTOR_ETFS and _change_pct(q) is not None]
+    return sorted(rows, key=lambda r: r["change_pct"], reverse=True)

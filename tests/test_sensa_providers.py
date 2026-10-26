@@ -22,7 +22,7 @@ QUOTE = {"data": {"symbol": "AAPL", "current_price": 347.61, "prev_day_close": 3
 def test_cboe_quote_maps_fields_and_uppercases():
     f = FakeFetch(QUOTE)
     q = Cboe(fetch=f).quote("aapl")
-    assert q == {"price": 347.61, "prev_close": 347.73, "iv30": 26.5}
+    assert q == {"price": 347.61, "prev_close": 347.73, "change_pct": -0.1424, "iv30": 26.5}
     assert f.calls[0][0].endswith("/delayed_quotes/quotes/AAPL.json")
 
 

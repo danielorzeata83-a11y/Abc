@@ -70,7 +70,7 @@ class Cboe:
     def quote(self, symbol):
         d = self._get("quotes", symbol)
         return {"price": d.get("current_price"), "prev_close": d.get("prev_day_close"),
-                "iv30": d.get("iv30")}
+                "change_pct": d.get("price_change_percent"), "iv30": d.get("iv30")}
 
     def chain(self, symbol):
         d = self._get("options", symbol)

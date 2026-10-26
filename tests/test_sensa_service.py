@@ -85,3 +85,27 @@ def test_gex_keeps_call_and_put_totals_separate_when_same_strike():
     assert g["call_gex"] > 0 and g["put_gex"] < 0
     assert round(g["net_gex"], 6) == round(0.01 * 10 * 100 * 100 ** 2 * 0.01, 6)
     assert len(g["by_strike"]) == 1
+
+
+from sensa.service import SECTOR_ETFS, sector_heatmap
+
+
+def test_sector_heatmap_orders_best_to_worst_and_names_sectors():
+    quotes = {"XLK": {"price": 102.0, "prev_close": 100.0},
+              "XLE": {"price": 97.0, "prev_close": 100.0},
+              "XLF": {"price": 100.5, "prev_close": 100.0}}
+    out = sector_heatmap(quotes)
+    assert [r["symbol"] for r in out] == ["XLK", "XLF", "XLE"]
+    assert out[0] == {"symbol": "XLK", "sector": "Technology", "change_pct": 2.0}
+
+
+def test_sector_etfs_cover_the_eleven_gics_sectors():
+    assert len(SECTOR_ETFS) == 11 and "XLK" in SECTOR_ETFS
+
+
+def test_provider_change_pct_wins_over_price_vs_prev_close():
+    # Cboe's prev_day_close is the last close, so price/prev_close would read ~0%.
+    q = {"AAA": {"price": 100.0, "prev_close": 100.0, "change_pct": 1.5}}
+    assert movers(q)["gainers"][0]["change_pct"] == 1.5
+    s = sector_heatmap({"XLK": {"price": 100.0, "prev_close": 100.0, "change_pct": -0.7}})
+    assert s[0]["change_pct"] == -0.7

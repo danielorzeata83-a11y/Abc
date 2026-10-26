@@ -5,7 +5,7 @@ import time
 from datetime import date
 
 from markov.data_providers import DataUnavailable
-from sensa.service import analyst_consensus, cp_ratio, gex, movers
+from sensa.service import SECTOR_ETFS, analyst_consensus, cp_ratio, gex, movers, sector_heatmap
 
 _STRIKE_BAND = 0.15   # show GEX strikes within +/-15% of spot
 
@@ -25,14 +25,20 @@ class Hub:
         self._cache[key] = (self.clock(), val)
         return val
 
-    def movers(self, symbols, n=5):
+    def _quotes(self, symbols):
         quotes = {}
         for s in symbols:
             try:
                 quotes[s] = self._cached(("q", s), lambda s=s: self.cboe.quote(s))
             except DataUnavailable:
                 continue
-        return movers(quotes, n)
+        return quotes
+
+    def movers(self, symbols, n=5):
+        return movers(self._quotes(symbols), n)
+
+    def sectors(self):
+        return sector_heatmap(self._quotes(SECTOR_ETFS))
 
     def analyst(self, symbol):
         if self.analyst_src is None:

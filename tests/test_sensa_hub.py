@@ -104,3 +104,19 @@ def test_insiders_unavailable_without_edgar():
     import pytest as _p
     with _p.raises(DataUnavailable):
         make().insiders()
+
+
+def test_sectors_skips_failed_quotes_and_uses_cache():
+    class Sec(FakeCboe):
+        def quote(self, sym):
+            self.quote_calls += 1
+            if sym == "XLE":
+                raise DataUnavailable("x")
+            return {"price": 101.0, "prev_close": 100.0}
+    cb = Sec()
+    hub = make(cboe=cb)
+    out = hub.sectors()
+    assert len(out) == 10 and all(r["change_pct"] == 1.0 for r in out)
+    n = cb.quote_calls
+    hub.sectors()
+    assert cb.quote_calls == n + 1          # only the failed XLE is retried; the rest is cached

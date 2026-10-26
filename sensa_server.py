@@ -42,6 +42,8 @@ td:last-child{text-align:right}.up{color:var(--up)}.dn{color:var(--dn)}.mut{colo
 select{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:.2rem}
 a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;margin:0}
 .bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:.5rem 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:4px}
+.tile{padding:.5rem;border-radius:4px;font-size:.78rem;color:#fff}.tile b{display:block;font-size:.9rem}
 .err{color:var(--dn);font-size:.85rem}footer{color:var(--mut);font-size:.75rem;padding:0 1rem 1rem}
 @media(max-width:480px){main{padding:.6rem;gap:.6rem}}
 </style></head><body>
@@ -50,6 +52,7 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 <main>
 <section class="card"><h3>Top gainers</h3><div id="gain"></div></section>
 <section class="card"><h3>Top losers</h3><div id="lose"></div></section>
+<section class="card"><h3>Sector heatmap</h3><div id="sect" class="tiles"></div></section>
 <section class="card"><h3>Analyst consensus</h3><div id="analyst"></div></section>
 <section class="card"><h3>Options snapshot</h3><div id="opts"></div></section>
 <section class="card"><h3>Treasury yield curve</h3><div id="yc"></div></section>
@@ -83,6 +86,10 @@ async function opts(s){const b=$('opts');try{const o=await api('/api/options/'+s
   ['C/P volume',c.volume_ratio==null?'-':c.volume_ratio],['C/P open int.',c.oi_ratio==null?'-':c.oi_ratio],['Contracts',o.chain.length]]){
   const tr=el('tr');tr.append(el('td',k,'mut'),el('td',v));t.append(tr)}
  b.replaceChildren(t)}catch(e){fail(b,e)}}
+async function sectors(){const b=$('sect');try{const r=await api('/api/sectors');
+ b.replaceChildren(...r.map(x=>{const d=el('div',null,'tile'),a=Math.min(Math.abs(x.change_pct)/2,1);
+  d.style.background=x.change_pct>=0?`rgba(63,185,80,${0.25+a*0.6})`:`rgba(248,81,73,${0.25+a*0.6})`;
+  d.append(el('b',x.symbol),el('span',x.sector),el('div',(x.change_pct>0?'+':'')+x.change_pct+'%'));return d}))}catch(e){fail(b,e)}}
 async function curve(){const b=$('yc');try{const y=await api('/api/yield-curve');const p=y.points;
  const W=320,H=140,v=p.map(x=>x[1]),lo=Math.min(...v)-.1,hi=Math.max(...v)+.1;
  const pts=p.map((x,i)=>(10+i*(W-20)/(p.length-1))+','+(H-20-(x[1]-lo)/(hi-lo)*(H-40))).join(' ');
@@ -100,8 +107,8 @@ async function news(){const b=$('news');try{const n=await api('/api/news'),u=el(
  for(const x of n){const li=el('li'),h=safeUrl(x.url),a=el('a',x.headline);if(h){a.href=h;a.target='_blank';a.rel='noopener noreferrer'}
   li.append(a,el('span',' '+(x.source||''),'mut'));u.append(li)}b.replaceChildren(u)}catch(e){fail(b,e)}}
 $('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value);insiders(e.target.value)};
-movers();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);
-setInterval(movers,60000);
+movers();sectors();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);
+setInterval(()=>{movers();sectors()},60000);
 </script></body></html>"""
 
 
@@ -149,6 +156,8 @@ def _make_handler(hub, watchlist):
                     payload = hub.analyst(arg)
                 elif route == "options" and arg:
                     payload = hub.options(arg)
+                elif route == "sectors":
+                    payload = hub.sectors()
                 elif route == "insiders":
                     payload = hub.insiders(arg)
                 elif route == "news":
