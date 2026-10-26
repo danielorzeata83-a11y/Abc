@@ -340,3 +340,19 @@ def test_figi_is_safe_to_call_from_several_threads():
     [t.start() for t in ts]
     [t.join() for t in ts]
     assert sorted(x for p in posts for x in p) == sorted(f"C{i}" for i in range(8))
+
+
+def test_infotable_reads_detailed_rows_with_options_and_scales_old_values():
+    xml = ('<informationTable xmlns="x"><infoTable><nameOfIssuer>A</nameOfIssuer><cusip>1</cusip><value>5</value>'
+           '<shrsOrPrnAmt><sshPrnamt>2</sshPrnamt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt><putCall>Call</putCall>'
+           '</infoTable></informationTable>')
+
+    class F:
+        def __call__(self, url, headers=None):
+            if url.endswith("index.json"):
+                return json.dumps({"directory": {"item": [{"name": "primary_doc.xml"}, {"name": "table.xml"}]}})
+            return xml
+    tf = ThirteenF("me@example.com", fetch=F())
+    assert tf.infotable("5", "0000000005-26-000001", "2026-10-01") == [("1", "A", "CALL", 2.0, 5.0)]
+    assert tf.infotable("5", "0000000005-22-000001", "2022-10-01")[0][4] == 5000.0
+    assert tf.fetch("https://x/y") == xml

@@ -83,6 +83,22 @@ class ThirteenF:
             raise DataUnavailable("SEC_CONTACT not set (SEC requires a contact in the User-Agent)")
         return self.fetch(url, {"User-Agent": f"Abc-dashboard-research/1.0 {self.contact}"})
 
+    def fetch(self, url):
+        return self._get(url)
+
+    def infotable(self, cik, accession, filed=None):
+        """Detailed information-table rows (cusip, issuer, kind SH/CALL/PUT, shares, value in dollars)."""
+        from sensa.live13f import parse_infotable
+        scale = 1000.0 if filed and filed < _DOLLARS_SINCE else 1.0
+        base = _ARCH.format(cik=int(cik), acc=accession.replace("-", ""))
+        items = json.loads(self._get(base + "/index.json"))["directory"]["item"]
+        for name in (i["name"] for i in items
+                     if i["name"].lower().endswith(".xml") and not i["name"].lower().startswith("primary_doc")):
+            text = self._get(f"{base}/{name}")
+            if "infotable" in text.lower():
+                return parse_infotable(text, scale)
+        raise DataUnavailable(f"no information table in filing {accession}")
+
     def latest(self, limit=50, scan=100):
         """Newest 13F reports on EDGAR, one row per manager (their newest), newest first."""
         feed = _safe_xml(self._get(_ATOM13.format(count=scan)))
