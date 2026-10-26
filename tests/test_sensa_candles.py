@@ -43,8 +43,8 @@ def test_intraday_timeframes_without_cache_explain_the_premium_limit():
         make_candles_fn("d", daily=FakeDaily(), intraday=no_cache)("AAPL", "1h")
 
 
-def test_without_daily_provider_the_cache_error_propagates():
-    with pytest.raises(DataUnavailable, match="No cached data"):
+def test_without_daily_provider_the_message_says_to_set_the_key():
+    with pytest.raises(DataUnavailable, match="ALPHAVANTAGE_API_KEY"):
         make_candles_fn("d", daily=None, intraday=no_cache)("AAPL", "1day")
 
 

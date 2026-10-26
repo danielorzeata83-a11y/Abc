@@ -28,7 +28,9 @@ def make_candles_fn(data_dir, daily=None, intraday=get_candles, secret=""):
                     f"{cache_err}. Intraday timeframes need the local cache "
                     "(Alpha Vantage intraday is a premium endpoint); try 1day.") from None
             if daily is None:
-                raise
+                raise DataUnavailable(
+                    "No chart data: set ALPHAVANTAGE_API_KEY (free key) before starting "
+                    "sensa_server.py to load daily candles.") from None
             try:
                 return _daily_candles(daily.fetch(symbol.upper()))
             except DataUnavailable as e:
