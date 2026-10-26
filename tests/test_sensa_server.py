@@ -757,3 +757,22 @@ def test_live_status_endpoint_and_when_not_configured():
 def test_investors_page_shows_which_reports_are_new_and_which_are_carried():
     html = srv.render_investors("PEBO")
     assert "isCurrent" in html and "carriedFilers" in html
+
+
+def test_overview_endpoint_serves_the_live_view_on_request():
+    class S(FakeSmart):
+        def live_overview(self):
+            return {"quarter": "Q3 2026", "live": {"reported": 7, "of": 100}, "funds": [], "stocks": []}
+    st, body, _ = _smart_req("GET", "/api/smart-money/overview?view=live", smart=S())
+    assert st == 200 and json.loads(body)["quarter"] == "Q3 2026"
+    st, body, _ = _smart_req("GET", "/api/smart-money/overview", smart=S())
+    assert json.loads(body)["quarter"] == "Q2 2026"
+    class Empty(FakeSmart):
+        def live_overview(self):
+            raise DataUnavailable("No live view yet")
+    assert _smart_req("GET", "/api/smart-money/overview?view=live", smart=Empty())[0] == 503
+
+
+def test_smart_money_page_can_switch_to_the_live_quarter():
+    html = srv.render_smart_money()
+    assert "view=live" in html and 'id="views"' in html

@@ -19,7 +19,7 @@ _LINE = re.compile(r"^(13F-HR(?:/A)?)\s+(.+?)\s+(\d{1,10})\s+(\d{8})\s+edgar/dat
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS filers(cik TEXT PRIMARY KEY, name TEXT, accession TEXT, filed TEXT, form TEXT, period TEXT, aum REAL);
-CREATE TABLE IF NOT EXISTS h(cik TEXT, cusip TEXT, kind TEXT, shares REAL, value REAL);
+CREATE TABLE IF NOT EXISTS h(cik TEXT, cusip TEXT, kind TEXT, shares REAL, value REAL, issuer TEXT);
 CREATE INDEX IF NOT EXISTS live_h_cusip ON h(cusip);
 CREATE TABLE IF NOT EXISTS seen(accession TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS days(day TEXT PRIMARY KEY);
@@ -105,11 +105,12 @@ class LiveStore:
             con.execute("INSERT OR REPLACE INTO filers VALUES(?,?,?,?,?,?,?)", (
                 filer["cik"], filer["name"], filer["accession"], filer["filed"], filer["form"], filer["period"], filer["aum"]))
             agg = {}
-            for cusip, _issuer, kind, shares, value in rows:
-                a = agg.setdefault((cusip, kind), [0.0, 0.0])
+            for cusip, issuer, kind, shares, value in rows:
+                a = agg.setdefault((cusip, kind), [0.0, 0.0, issuer])
                 a[0] += shares
                 a[1] += value
-            con.executemany("INSERT INTO h VALUES(?,?,?,?,?)", [(filer["cik"], c, k, s, v) for (c, k), (s, v) in agg.items()])
+            con.executemany("INSERT INTO h VALUES(?,?,?,?,?,?)",
+                            [(filer["cik"], c, k, s, v, i) for (c, k), (s, v, i) in agg.items()])
             con.execute("INSERT OR IGNORE INTO seen VALUES(?)", (filer["accession"],))
 
     def filers(self):
@@ -121,6 +122,16 @@ class LiveStore:
         with self._con() as con:
             return con.execute("SELECT cusip, kind, shares, value FROM h WHERE cik = ? ORDER BY cusip, kind", (cik,)).fetchall()
 
+    def share_holdings(self, ciks):
+        """{cik: [{cusip, issuer, value, shares}]} of plain-share positions (options are not 'held shares')."""
+        out = {}
+        with self._con() as con:
+            for cik in ciks:
+                rows = con.execute("SELECT cusip, issuer, value, shares FROM h WHERE cik = ? AND kind = 'SH'", (cik,)).fetchall()
+                if rows:
+                    out[cik] = [{"cusip": c, "issuer": i or "", "value": v, "shares": sh} for c, i, v, sh in rows]
+        return out
+
     def purge_through(self, period):
         """Forget live reports for quarters the bulk data set now covers."""
         with self._lock, self._con() as con:
@@ -129,11 +140,13 @@ class LiveStore:
 
 
 class LiveUpdater(BackgroundJob):
-    def __init__(self, store, tf, bulk_period, today=date.today, sleep=None, min_interval=0.3):
+    def __init__(self, store, tf, bulk_period, today=date.today, sleep=None, min_interval=0.3, size_rank=None, on_update=None):
         super().__init__("reading new 13F reports from EDGAR")
         import time
         self.store, self.tf, self.bulk_period = store, tf, bulk_period
         self.today, self._sleep, self.min_interval = today, sleep or time.sleep, min_interval
+        self.on_update = on_update
+        self.size_rank = size_rank or (lambda: {})        # cik -> rank (0 = biggest): the biggest filers are read first
 
     def status(self):
         filers = self.store.filers()
@@ -167,6 +180,9 @@ class LiveUpdater(BackgroundJob):
                 self.store.mark_day(d.isoformat())
         if todo and failed == len(todo):
             raise DataUnavailable("EDGAR daily index is unavailable right now; will retry")
+        filings = list({f["accession"]: f for f in filings}.values())          # one read per report
+        rank = self.size_rank()
+        filings.sort(key=lambda f: rank.get(f["cik"], len(rank)))
         added = 0
         for f in filings:
             try:
@@ -180,4 +196,6 @@ class LiveUpdater(BackgroundJob):
             self.store.add({**f, "period": cov["period"], "aum": cov["value"]}, rows)
             added += 1
             self._sleep(self.min_interval)
+        if self.on_update:
+            self.on_update(added)
         return added or None

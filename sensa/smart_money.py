@@ -6,6 +6,7 @@ A new quarter produces one summary message for `notify` (e.g. Telegram)."""
 
 from markov.data_providers import DataUnavailable
 from sensa.jobs import BackgroundJob
+from sensa.live_overview import load_live_overview
 from sensa.universe import load_managers, load_overview, refresh_overview
 
 
@@ -51,6 +52,10 @@ class OverviewService(BackgroundJob):
         except DataUnavailable:
             raise DataUnavailable("No Smart Money overview yet. Press Update to build it from SEC data "
                                   "(a few minutes the first time).") from None
+
+    def live_overview(self):
+        """Top funds that already filed the next quarter's 13F, compared with their own previous quarter."""
+        return load_live_overview(self.data_dir)
 
     def managers(self):
         return load_managers(self.data_dir)

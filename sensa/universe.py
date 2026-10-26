@@ -313,6 +313,12 @@ def build_overview(cur_zip, prev_zip, period, prev_period, top=100, figi=None,
         cur_h = load_holdings(oc("INFOTABLE.tsv"), {m["accession"]: m["cik"] for m in managers})
         prev_h = load_holdings(op("INFOTABLE.tsv"), {prev_managers[m["cik"]]["accession"]: m["cik"]
                                                       for m in managers if m["cik"] in prev_managers})
+    return assemble_overview(managers, cur_h, prev_h, prev_managers, period, prev_period, figi, stocks_limit, flows_limit)
+
+
+def assemble_overview(managers, cur_h, prev_h, prev_managers, period, prev_period, figi=None, stocks_limit=300,
+                      flows_limit=100):
+    """Overview of `managers` (cik -> holdings in cur_h, last period's in prev_h) once the holdings are loaded."""
     factors = split_factors(cur_h, prev_h)
     prev_h = adjust_previous(prev_h, factors)                 # restate last quarter after splits
     stocks = aggregate_stocks(cur_h, prev_h)

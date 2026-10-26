@@ -74,6 +74,21 @@ Pagina: `/stock/PEBO/investors`; API: `/api/investors/PEBO?page=1&limit=20&sortB
   (lista lor e curatoriată), „bank" = lista editabilă `PRIME_BROKER_PATTERNS` din `sensa/investors.py`;
   fără suprapunerea Q3 în curs („current vs carried").
 
+## Lag redus: rapoartele 13F noi, citite direct de pe EDGAR
+Arhivele SEC pentru un trimestru apar la săptămâni după ce fondurile încep să depună. `sensa/live13f.py` citește singur
+rapoartele noi (`13F-HR`) pentru trimestrul următor:
+- **Descoperire:** indexul zilnic EDGAR (`daily-index/<an>/QTR<q>/form.<data>.idx`), apoi pagina de copertă și tabelul de
+  poziții al fiecărui raport. Cele mai mari fonduri sunt citite primele; ce a fost citit nu se mai citește.
+- **Stocare:** `live13f.db` (SQLite, lângă `holders.db`). Se rulează la pornire și apoi din oră în oră (`--live-hours`, 0 = oprit).
+  Cererile sunt spațiate (~3/s) ca să respecte limita SEC. Rapoartele de tip amendament (`13F-HR/A`) sunt sărite.
+- **Pagina investitori:** filer-ii care au depus deja folosesc noile poziții (eticheta NEW REPORT, comparate cu trimestrul
+  anterior); ceilalți rămân „carried" din ultimul trimestru complet. Sumarul spune câți au raportat deja.
+- **Smart Money live:** butonul „Q3 2026 live: N of 100 top funds reported" arată doar fondurile din top 100 care au depus,
+  fiecare comparat cu propriul trimestru anterior. Se umple pe măsură ce depun (fondurile mari depun de obicei aproape de termen,
+  la 14 noiembrie pentru Q3).
+- **Când vine arhiva SEC:** datele live pentru trimestrul acoperit sunt șterse automat, iar vederea completă preia.
+- **Stare:** `GET /api/live/status` arată starea și câte rapoarte au fost citite.
+
 ## Paginile instituționale (după structura originalului)
 - `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
 - `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru

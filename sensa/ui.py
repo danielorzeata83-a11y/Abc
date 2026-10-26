@@ -344,6 +344,7 @@ _SM_BODY = r"""
  <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Smart Money</h1>
  <p class="mut">What the largest 13F filers hold, taken together, and how they moved since the previous quarter.</p>
  <div class="card bar"><span id="st" class="mut">Loading…</span><span><button class="btn" id="upd">Update from SEC</button></span></div>
+ <div class="tabs" id="views"></div>
  <div id="msg" class="err"></div>
  <div class="stats" id="stats"></div>
  <div class="tabs" id="tabs"></div>
@@ -420,15 +421,20 @@ function drawAll(){$('stats').replaceChildren(
  for(const [k,l] of [['held','Most held'],['moves','Moves'],['funds','Top funds']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;sortKey=null;drawAll()};t.append(b)}
  const sel=el('select',null,'sel');for(const [k,l] of [['stock','Stocks & ADRs'],['all','Include ETFs & other']]){const o=el('option',l);o.value=k;o.selected=k===kinds;sel.append(o)}
  sel.onchange=()=>{kinds=sel.value;draw()};if(tab!=='funds')t.append(sel);
- $('note').textContent='Funds = how many of the '+O.cohort+' filers hold it. Active flow = net shares bought or sold beyond each fund\'s own proportional growth, at quarter-end prices. 13F lists long positions only, reported up to 45 days after quarter end.';
+ $('note').textContent=(O.live?'Live view: only the '+O.live.reported+' of '+O.live.of+' top funds that have already filed '+O.quarter+' are included, each compared with its own previous quarter. It fills up as more funds report. ':'')+'Funds = how many of the '+O.cohort+' filers hold it. Active flow = net shares bought or sold beyond each fund\'s own proportional growth, at quarter-end prices. 13F lists long positions only, reported up to 45 days after quarter end.';
  draw()}
 async function status(){try{const s=await api('/api/smart-money/status');
   $('st').textContent=s.state==='running'?'Updating from SEC… this can take a few minutes':(s.quarter?'Data: '+s.quarter+' · built '+s.built_at.replace('T',' ').replace('+00:00',' UTC'):'Not built yet')+(s.state==='error'?' · last update failed: '+s.message:'');
   $('upd').disabled=s.state==='running';return s.state}catch(e){$('st').textContent='';return 'idle'}}
-async function load(){try{O=await api('/api/smart-money/overview');$('msg').textContent='';drawAll()}catch(e){O=null;$('stats').replaceChildren();$('tabs').replaceChildren();$('view').replaceChildren();$('msg').textContent=e.message}}
+let view='full',liveInfo=null;
+function drawViews(){const v=$('views');v.replaceChildren();if(!liveInfo)return;
+ for(const [k,l] of [['full','Complete quarter'],['live',liveInfo.quarter+' live: '+liveInfo.live.reported+' of '+liveInfo.live.of+' top funds reported']]){
+  const b=el('button',l,'btn'+(k===view?' on':''));b.onclick=()=>{view=k;load()};v.append(b)}}
+async function checkLive(){try{liveInfo=await api('/api/smart-money/overview?view=live')}catch(e){liveInfo=null;if(view==='live')view='full'}drawViews()}
+async function load(){try{O=await api('/api/smart-money/overview'+(view==='live'?'?view=live':''));$('msg').textContent='';drawAll();drawViews()}catch(e){O=null;$('stats').replaceChildren();$('tabs').replaceChildren();$('view').replaceChildren();$('msg').textContent=e.message}}
 async function poll(){const s=await status();if(s==='running')setTimeout(poll,3000);else load()}
 $('upd').onclick=async()=>{try{await api('/api/smart-money/refresh',{force:false});poll()}catch(e){$('msg').textContent=e.message}};
-load();poll();
+checkLive();load();poll();setInterval(checkLive,300000);
 """
 
 

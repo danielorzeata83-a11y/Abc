@@ -168,3 +168,23 @@ def test_requests_are_spaced_to_respect_the_sec_rate_limit(tmp_path):
     up = LiveUpdater(store, tf, lambda: "2026-06-30", today=lambda: date(2026, 10, 26), sleep=naps.append, min_interval=0.3)
     up.check()
     assert len(naps) >= len(tf.urls) - 1 and set(naps) == {0.3}
+
+
+def test_biggest_filers_are_read_first_so_the_top_funds_show_up_early(tmp_path):
+    tf = FakeTF()
+    store = LiveStore(str(tmp_path / "live.db"))
+    rank = {"0000919192": 0}                                     # AMALGAMATED is the biggest known filer
+    up = LiveUpdater(store, tf, lambda: "2026-06-30", today=lambda: date(2026, 10, 26), sleep=lambda s: None,
+                     size_rank=lambda: rank)
+    up.check()
+    assert tf.covered[0] == "0000919192-26-000006"
+
+
+def test_on_update_hook_runs_after_each_successful_check_with_the_number_of_new_reports(tmp_path):
+    seen = []
+    tf = FakeTF()
+    store = LiveStore(str(tmp_path / "live.db"))
+    up = LiveUpdater(store, tf, lambda: "2026-06-30", today=lambda: date(2026, 10, 26), sleep=lambda s: None, on_update=seen.append)
+    up.check()
+    up.check()
+    assert seen == [3, 0]

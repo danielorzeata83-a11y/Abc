@@ -212,7 +212,11 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._json(503, {"error": "Smart Money overview is not configured (set SEC_CONTACT)"})
                     return
                 try:
-                    self._json(200, smart.overview() if u.path.endswith("overview") else smart.status())
+                    if u.path.endswith("overview"):
+                        live_view = (parse_qs(u.query).get("view") or [""])[0] == "live"
+                        self._json(200, smart.live_overview() if live_view else smart.overview())
+                    else:
+                        self._json(200, smart.status())
                 except DataUnavailable as e:
                     self._json(503, {"error": str(e)})
                 return
@@ -576,7 +580,22 @@ def build_live(smart, thirteenf):
 
     def bulk_period():
         return meta(os.path.join(smart.data_dir, "holders.db"))["period"]
-    return LiveUpdater(LiveStore(os.path.join(smart.data_dir, "live13f.db")), thirteenf, bulk_period)
+    def size_rank():
+        import sqlite3
+        from sensa.holders import _uri
+        con = sqlite3.connect(_uri(os.path.join(smart.data_dir, "holders.db")), uri=True)
+        try:
+            return {cik: i for i, (cik,) in enumerate(con.execute("SELECT cik FROM filers WHERE q = 0 ORDER BY aum DESC"))}
+        finally:
+            con.close()
+    def rebuild_view(added):
+        from sensa.live_overview import refresh_live_overview
+        try:
+            refresh_live_overview(smart.data_dir, smart.figi)
+        except DataUnavailable:
+            pass                                          # no overview yet: nothing to compare with
+    return LiveUpdater(LiveStore(os.path.join(smart.data_dir, "live13f.db")), thirteenf, bulk_period, size_rank=size_rank,
+                       on_update=rebuild_view)
 
 
 def build_insiders(contact):
