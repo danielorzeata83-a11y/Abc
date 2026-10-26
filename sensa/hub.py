@@ -11,10 +11,10 @@ _STRIKE_BAND = 0.15   # show GEX strikes within +/-15% of spot
 
 
 class Hub:
-    def __init__(self, cboe, news_fn, curve_fn, analyst=None, edgar=None, ttl=60,
+    def __init__(self, cboe, news_fn, curve_fn, analyst=None, edgar=None, finra=None, ttl=60,
                  clock=time.monotonic, today=lambda: date.today().isoformat()):
         self.cboe, self.news_fn, self.curve_fn, self.analyst_src = cboe, news_fn, curve_fn, analyst
-        self.edgar = edgar
+        self.edgar, self.finra = edgar, finra
         self.ttl, self.clock, self.today, self._cache = ttl, clock, today, {}
 
     def _cached(self, key, load, ttl=None):
@@ -70,6 +70,13 @@ class Hub:
         if self.edgar is None:
             raise DataUnavailable("EDGAR not configured (set SEC_CONTACT)")
         return self._cached(("i", symbol, limit), lambda: self.edgar.recent(symbol, limit), ttl=300)
+
+    def short_volume(self, symbol):
+        if self.finra is None:
+            raise DataUnavailable("FINRA not configured")
+        data = self._cached(("f",), lambda: self.finra.load(date.fromisoformat(self.today())),
+                            ttl=3600)
+        return self.finra.lookup(data, symbol)
 
     def yield_curve(self):
         return self._cached(("y",), self.curve_fn)

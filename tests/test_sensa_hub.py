@@ -120,3 +120,22 @@ def test_sectors_skips_failed_quotes_and_uses_cache():
     n = cb.quote_calls
     hub.sectors()
     assert cb.quote_calls == n + 1          # only the failed XLE is retried; the rest is cached
+
+
+def test_short_volume_parses_file_once_per_hour_and_looks_up_symbols():
+    class Fin:
+        loads = 0
+        def load(self, today):
+            Fin.loads += 1
+            return {"date": "2026-10-23", "rows": {"AAA": (30.0, 100.0)}}
+        lookup = staticmethod(__import__("sensa.finra", fromlist=["Finra"]).Finra.lookup)
+    t = [0.0]
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, finra=Fin(), ttl=60, clock=lambda: t[0],
+              today=lambda: "2026-10-26")
+    assert hub.short_volume("aaa")["short_ratio"] == 0.3
+    t[0] = 1800.0
+    assert hub.short_volume("ZZZ") is None
+    assert Fin.loads == 1
+    t[0] = 4000.0
+    hub.short_volume("AAA")
+    assert Fin.loads == 2

@@ -19,6 +19,7 @@ from urllib.parse import urlparse, parse_qs
 
 from markov.data_providers import DataUnavailable
 from sensa.edgar import Edgar
+from sensa.finra import Finra
 from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, yahoo_news
 
@@ -56,9 +57,10 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 <section class="card"><h3>Analyst consensus</h3><div id="analyst"></div></section>
 <section class="card"><h3>Options snapshot</h3><div id="opts"></div></section>
 <section class="card"><h3>Treasury yield curve</h3><div id="yc"></div></section>
+<section class="card"><h3>Short volume (FINRA)</h3><div id="shv"></div></section>
 <section class="card"><h3>Insider trades (Form 4)</h3><div id="ins"></div></section>
 <section class="card"><h3>Market news</h3><div id="news"></div></section>
-</main><footer>__DISCLAIMER__ Data: Cboe delayed quotes (~15 min), FRED, Yahoo Finance RSS.</footer>
+</main><footer>__DISCLAIMER__ Data: Cboe delayed quotes (~15 min), FRED, Yahoo Finance RSS, SEC EDGAR, FINRA.</footer>
 <script>
 const $=id=>document.getElementById(id);
 const el=(t,txt,cls)=>{const e=document.createElement(t);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e};
@@ -98,6 +100,12 @@ async function curve(){const b=$('yc');try{const y=await api('/api/yield-curve')
  const pl=document.createElementNS(ns,'polyline');pl.setAttribute('points',pts);
  pl.setAttribute('fill','none');pl.setAttribute('stroke','#58a6ff');pl.setAttribute('stroke-width','2');svg.append(pl);
  b.replaceChildren(svg,el('div',y.date+' · '+p[0][0]+' '+p[0][1]+'% → '+p[p.length-1][0]+' '+p[p.length-1][1]+'%','mut'))}catch(e){fail(b,e)}}
+async function shortvol(s){const b=$('shv');try{const x=await api('/api/short-volume/'+s);
+ if(!x){b.replaceChildren(el('span','no data for '+s,'mut'));return}
+ const pct=x.short_ratio==null?'-':(x.short_ratio*100).toFixed(1)+'%',t=el('table');
+ for(const [k,v] of [['Date',x.date],['Short ratio',pct],['Short vol',Math.round(x.short_volume).toLocaleString()],['Total vol',Math.round(x.total_volume).toLocaleString()]]){
+  const tr=el('tr');tr.append(el('td',k,'mut'),el('td',v));t.append(tr)}
+ b.replaceChildren(t,el('div','Share of daily volume that was short sales (not short interest).','mut'))}catch(e){fail(b,e)}}
 async function insiders(s){const b=$('ins');try{const r=await api('/api/insiders/'+s);
  if(!r.length){b.replaceChildren(el('span','no recent open-market trades for '+s,'mut'));return}
  const t=el('table');for(const x of r){const tr=el('tr');
@@ -106,8 +114,8 @@ async function insiders(s){const b=$('ins');try{const r=await api('/api/insiders
 async function news(){const b=$('news');try{const n=await api('/api/news'),u=el('ul');
  for(const x of n){const li=el('li'),h=safeUrl(x.url),a=el('a',x.headline);if(h){a.href=h;a.target='_blank';a.rel='noopener noreferrer'}
   li.append(a,el('span',' '+(x.source||''),'mut'));u.append(li)}b.replaceChildren(u)}catch(e){fail(b,e)}}
-$('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value);insiders(e.target.value)};
-movers();sectors();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);
+$('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value);insiders(e.target.value);shortvol(e.target.value)};
+movers();sectors();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);shortvol($('sym').value);
 setInterval(()=>{movers();sectors()},60000);
 </script></body></html>"""
 
@@ -156,6 +164,8 @@ def _make_handler(hub, watchlist):
                     payload = hub.analyst(arg)
                 elif route == "options" and arg:
                     payload = hub.options(arg)
+                elif route == "short-volume" and arg:
+                    payload = hub.short_volume(arg)
                 elif route == "sectors":
                     payload = hub.sectors()
                 elif route == "insiders":
@@ -187,7 +197,7 @@ def build_hub():
     fred = FredApi(os.environ.get("FRED_API_KEY", "").strip())
     sec = os.environ.get("SEC_CONTACT", "").strip()
     return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
-               edgar=Edgar(sec, http_fetch) if sec else None)
+               edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch))
 
 
 def main():

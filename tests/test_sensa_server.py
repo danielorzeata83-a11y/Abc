@@ -98,3 +98,34 @@ def test_sectors_endpoint():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_short_volume_endpoint():
+    class H(FakeHub):
+        def short_volume(self, s):
+            return {"symbol": s, "short_ratio": 0.5}
+    server = srv.make_server(H(), "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", "/api/short-volume/aaa")
+        r = c.getresponse()
+        assert r.status == 200 and json.loads(r.read())["short_ratio"] == 0.5
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_page_inline_script_is_syntactically_valid_javascript(tmp_path):
+    import re
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not installed")
+    script = re.search(r"<script>(.*)</script>", srv.render_index(["AAA"]), re.S).group(1)
+    f = tmp_path / "page.js"
+    f.write_text(script)
+    r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
