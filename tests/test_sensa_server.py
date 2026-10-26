@@ -832,3 +832,8 @@ def test_stock_page_explains_missing_options_and_analyst_data_instead_of_showing
     html = srv.render_stock("BPRE")
     assert "No options data for this symbol" in html and "No analyst coverage" in html
     assert "minmax(380px,1fr)" in html
+
+
+def test_dashboard_symbol_row_does_not_reuse_the_ten_pixel_progress_bar_class():
+    html = srv.render_index(["AAA"])
+    assert 'class="symbar"' in html and '<div class="bar"><span class="mut">symbol' not in html

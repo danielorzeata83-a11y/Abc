@@ -60,6 +60,7 @@ table{width:100%;border-collapse:collapse}td{padding:.25rem 0;border-bottom:1px 
 td:last-child{text-align:right}.up{color:var(--up)}.dn{color:var(--dn)}.mut{color:var(--mut)}
 select{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:.2rem}
 a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;margin:0}
+.symbar{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;padding:.6rem 1rem}
 .bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:.5rem 0}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:4px}
 .tile{padding:.5rem;border-radius:4px;font-size:.78rem;color:#fff}.tile b{display:block;font-size:.9rem}
@@ -68,7 +69,7 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 .err{color:var(--dn);font-size:.85rem}footer{color:var(--mut);font-size:.75rem;padding:0 1rem 1rem}
 @media(max-width:480px){main{padding:.6rem;gap:.6rem}}
 </style></head><body>
-__NAV__<div class="bar"><span class="mut">symbol</span> <select id="sym">__OPTIONS__</select> <a id="open" href="#">Open stock page →</a></div>
+__NAV__<div class="symbar"><span class="mut">symbol</span> <select id="sym">__OPTIONS__</select> <a id="open" href="#">Open stock page →</a></div>
 <main>
 <section class="card wide"><h3>Chart</h3><div id="tfs"></div><div id="chart" style="height:340px;margin-top:.5rem"></div><div id="chartmsg"></div></section>
 <section class="card"><h3>Top gainers</h3><div id="gain"></div></section>
