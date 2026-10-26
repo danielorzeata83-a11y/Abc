@@ -644,14 +644,15 @@ function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c
  if(!rows.length){const tr=el('tr'),td=el('td','No trades in this window','mut');td.colSpan=cols.length;tr.append(td);tb.append(tr)}
  t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
 const tick=r=>{const d=el('td');d.append(tkLink(r.symbol));return d};
+const own=r=>{const n=r.owner.split(' / ');return n.slice(0,2).join(' / ')+(n.length>2?' +'+(n.length-2)+' more':'')};
 const tick2=r=>{const d=el('td');d.append(tkLink(r.symbol));return d};
 function viewFor(){const base=[{l:'Ticker',r:tick},{l:'Company',f:r=>r.issuer}];
  if(tab==='perf'&&!sym)return perfView('insiders',d=>{const p=d.performance,w=el('div');
-  const st=el('div',null,'stats');st.append(stat('Buys measured',String(p.n),'open market, $25k or more'),stat('Average return',fmtPct(p.avg_return_pct),'since each purchase price'),
+  const st=el('div',null,'stats');st.append(stat('Buys measured',String(p.n),'open market, $25k or more'),stat('Average return',fmtPct(p.avg_return_pct),'median '+fmtPct(p.median_return_pct)+' · since purchase'),
    stat('S&P 500',fmtPct(p.spy_pct),'over the same days'),stat('Winners',p.win_rate_pct==null?'-':p.win_rate_pct+'%','of purchases'));
   const bw=cols=>rows=>table(cols,rows);const pc=r=>el('td',fmtPct(r.return_pct),'n '+pcls(r.return_pct));
-  const cols=[{l:'Ticker',r:tick2},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},{l:'Bought',f:r=>fdate(r.date)},{l:'Price',n:1,f:r=>'$'+r.price.toFixed(2)},{l:'Return',n:1,r:pc}];
-  const h=[{l:'Ticker',r:tick2},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},{l:'Shares held',n:1,f:r=>Math.round(r.shares).toLocaleString()},
+  const cols=[{l:'Ticker',r:tick2},{l:'Insider',f:r=>own(r)},{l:'Role',f:r=>r.role},{l:'Bought',f:r=>fdate(r.date)},{l:'Price',n:1,f:r=>'$'+r.price.toFixed(2)},{l:'Return',n:1,r:pc}];
+  const h=[{l:'Ticker',r:tick2},{l:'Insider',f:r=>own(r)},{l:'Role',f:r=>r.role},{l:'Shares held',n:1,f:r=>Math.round(r.shares).toLocaleString()},
    {l:'Value now',n:1,f:r=>money(r.value)},{l:'Own buys',n:1,r:r=>el('td',fmtPct(r.buy_return_pct),'n '+pcls(r.buy_return_pct))}];
   const sec=(t,x)=>{const c=el('section',null,'card');c.style.marginTop='1rem';c.append(el('h3',t),x);return c};
   w.append(st,sec('Best purchases',table(cols,p.best)),sec('Worst purchases',table(cols,p.worst)),sec('Largest insider holdings (reported balance, today\'s price)',table(h,d.holdings)));return w});

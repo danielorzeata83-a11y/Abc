@@ -107,17 +107,19 @@ def insider_buy_performance(trades, prices, top=5):
     for t in trades:
         if t["side"] != "buy":
             continue
-        now = prices.last(t["symbol"])
-        r = _pct(now[1], t["price"]) if now else None
+        now, entry = prices.last(t["symbol"]), prices.on_or_after(t["symbol"], t["date"])
+        r = _pct(now[1], entry[1]) if now and entry else None      # same adjusted series both ends: splits cancel out
         if r is None:
             continue
         rows.append({"symbol": t["symbol"], "owner": t["owner"], "role": t.get("role", ""), "date": t["date"],
                      "price": t["price"], "return_pct": r, "spy_pct": _spy(prices, t["date"])})
     if not rows:
-        return {"n": 0, "avg_return_pct": None, "spy_pct": None, "win_rate_pct": None, "best": [], "worst": []}
+        return {"n": 0, "avg_return_pct": None, "median_return_pct": None, "spy_pct": None, "win_rate_pct": None, "best": [], "worst": []}
     spy = [r["spy_pct"] for r in rows if r["spy_pct"] is not None]
     ordered = sorted(rows, key=lambda r: r["return_pct"], reverse=True)
-    return {"n": len(rows), "avg_return_pct": round(sum(r["return_pct"] for r in rows) / len(rows), 2),
+    mid = sorted(r["return_pct"] for r in rows)
+    median = mid[len(mid) // 2] if len(mid) % 2 else round((mid[len(mid) // 2 - 1] + mid[len(mid) // 2]) / 2, 2)
+    return {"n": len(rows), "avg_return_pct": round(sum(r["return_pct"] for r in rows) / len(rows), 2), "median_return_pct": median,
             "spy_pct": round(sum(spy) / len(spy), 2) if spy else None,
             "win_rate_pct": round(sum(1 for r in rows if r["return_pct"] > 0) / len(rows) * 100, 1),
             "best": ordered[:top], "worst": ordered[::-1][:top]}

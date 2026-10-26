@@ -101,6 +101,19 @@ Orice ticker din aplicație (Smart Money, fonduri, alerte, insideri, dark pool, 
 - API nou: `/api/quote/<T>`, `/api/company/<T>`. Prima vizită la o acțiune poate dura ~30-60 s (potrivirea ticker → CUSIP prin OpenFIGI,
   apoi rămâne în cache).
 
+## Performanță: portofoliile la prețurile de azi
+Prețuri zilnice gratuite (Yahoo Finance, split-ajustate) în `sensa/prices.py`; calculele sunt în `sensa/performance.py`.
+- **Fonduri** (`/api/portfolio/<cik>`, cardul „Portfolio at today's prices" pe pagina fondului): pozițiile raportate (cele mai mari 40)
+  evaluate la prețul de la sfârșit de trimestru, la data depunerii și azi, cu S&P 500 alături. Contează „de la depunere", adică ce
+  puteai copia tu. Se arată cât din valoare a putut fi evaluată.
+- **Clasament fonduri** (Smart Money → Performance), **membri House** (Politicians → Performance: randament ponderat al cumpărărilor
+  de la data tranzacției și de la data raportării, față de S&P 500), **insideri** (Insiders → Performance: randamentul cumpărărilor
+  open-market față de S&P 500, cele mai bune/rele și cele mai mari solduri). Se calculează în fundal la pornire și din 6 în 6 ore
+  (`/api/performance/<funds|members|insiders>`; „Compute now" pornește imediat). Prima rulare durează minute.
+- **Limite:** buy-and-hold pe poziții raportate (13F nu arată tranzacțiile dintre rapoarte); politicienii raportează intervale, nu
+  portofolii (valoare la mijlocul intervalului); soldurile insiderilor apar doar după o reconstruire a datelor Form 4 cu coloana
+  „shares owned following". Randamentele insiderilor folosesc aceeași serie ajustată la ambele capete, ca splitul să nu falsifice rezultatul.
+
 ## Paginile instituționale (după structura originalului)
 - `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
 - `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru

@@ -943,3 +943,7 @@ def test_pages_have_performance_views_wired_to_the_performance_api():
     assert "/api/portfolio/" in m and 'id="perf"' in m
     for html in (srv.render_smart_money(), srv.render_political(), srv.render_insiders(), srv.render_manager("0001609098")):
         assert "function perfView" in html
+
+
+def test_insider_performance_tables_shorten_long_joint_filer_lists():
+    assert "own=r=>" in srv.render_insiders() and "{l:'Insider',f:r=>own(r)}" in srv.render_insiders()

@@ -95,3 +95,10 @@ def test_insider_buy_performance_averages_open_market_buys_against_spy():
     assert r["n"] == 2 and r["avg_return_pct"] == 0.0                       # +50% and -50%
     assert r["spy_pct"] == 10.0 and r["win_rate_pct"] == 50.0
     assert r["best"][0]["symbol"] == "AAA" and r["worst"][0]["symbol"] == "BBB"
+
+
+def test_insider_returns_use_the_same_split_adjusted_price_series_for_entry_and_exit():
+    # the reported price (40) is pre-split; the adjusted close on that day is 10
+    trades = [itrade("Ann", "AAA", "buy", "2026-06-30", 40.0)]
+    r = insider_buy_performance(trades, Prices(SERIES))
+    assert r["best"][0]["return_pct"] == 50.0 and r["median_return_pct"] == 50.0
