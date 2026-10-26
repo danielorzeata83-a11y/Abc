@@ -29,7 +29,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 """
 
 NAV_ITEMS = (("dash", "/", "Dashboard"), ("smart", "/smart-money", "Smart Money"),
-             ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"),
+             ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"), ("political", "/political-trades", "Politicians"),
              ("alerts", "/smart-money/alerts", "Alerts"))
 
 
@@ -667,3 +667,59 @@ $('sq').onkeydown=e=>{if(e.key==='Enter'){const v=e.target.value.trim().toUpperC
 
 def render_dark_pool():
     return shell("Dark pool", "dark", _DARK_BODY, _COMMON_JS + _DARK_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)
+
+
+# ------------------------------------------------------------------ political trades (US House)
+_POL_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Political trades</h1>
+ <p class="mut">Stock trades disclosed by members of the US House of Representatives under the STOCK Act (Periodic Transaction Reports).
+ Amounts are ranges, so values are estimates (midpoint). Reports arrive up to 45 days after a trade. The Senate is not covered.</p>
+ <div class="card bar"><span id="st" class="mut">Loading…</span><span><button class="btn" id="upd">Update from the House Clerk</button></span></div>
+ <div id="msg" class="err"></div>
+ <div class="stats" id="stats"></div>
+ <div class="tabs" id="tabs"></div>
+ <div id="view"></div>
+ <p class="note" id="note"></p>
+</div>
+"""
+
+_POL_JS = r"""
+let D=null,tab='latest',days=90,side='',tk='',mb='';
+const range=r=>r.amount_high?money(r.amount_low)+' – '+money(r.amount_high):'Over '+money(r.amount_low);
+const kindc=t=>t==='purchase'?'up':t==='exchange'?'mut':'dn';
+function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c=>{const th=el('th',c.l);if(c.n)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);
+ const tb=el('tbody');for(const r of rows){const tr=el('tr');for(const c of cols){const td=c.r?c.r(r):el('td',c.f(r));if(c.n)td.classList.add('n');tr.append(td)}tr.append&&tb.append(tr)}
+ if(!rows.length){const tr=el('tr'),td=el('td','No trades match','mut');td.colSpan=cols.length;tr.append(td);tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+function viewFor(){
+ if(tab==='latest')return table([{l:'Traded',f:r=>fdate(r.date)},{l:'Member',f:r=>r.member+' ('+r.state_dst+')'},
+  {l:'Asset',r:r=>{const d=el('td');if(r.ticker)d.append(el('b',r.ticker+' '));d.append(document.createTextNode(r.asset));return d}},
+  {l:'Type',r:r=>el('td',r.type+(r.owner?' ('+r.owner+')':''),kindc(r.type))},{l:'Amount',n:1,f:range},{l:'Reported',f:r=>fdate(r.filed)}],D.latest);
+ if(tab==='members')return table([{l:'Member',f:r=>r.member},{l:'District',f:r=>r.state_dst},{l:'Trades',n:1,f:r=>String(r.trades)},{l:'Est. volume',n:1,f:r=>money(r.value)}],D.members);
+ const rows=tab==='bought'?D.top_bought:D.top_sold;
+ return table([{l:'Ticker',r:r=>{const d=el('td');d.append(el('b',r.ticker));return d}},{l:'Asset',f:r=>r.asset},{l:'Members',n:1,f:r=>String(r.members)},
+  {l:'Trades',n:1,f:r=>String(r.trades)},{l:'Est. value',n:1,r:r=>el('td',money(r.value),tab==='bought'?'up':'dn')}],rows)}
+function draw(){if(!D)return;
+ $('stats').replaceChildren(stat('Reports',String(D.reports),'last '+D.days+' days'),stat('Trades',String(D.trades),'disclosed'),stat('Latest report',fdate(D.as_of),'House Clerk'),stat('Source','House','Periodic Transaction Reports'));
+ const t=$('tabs');t.replaceChildren();
+ for(const [k,l] of [['latest','Latest trades'],['bought','Most bought'],['sold','Most sold'],['members','Most active members']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;draw()};t.append(b)}
+ const sel=el('select',null,'sel');for(const d of [30,90,180,365]){const o=el('option','Last '+d+' days');o.value=d;o.selected=d===days;sel.append(o)}sel.onchange=()=>{days=+sel.value;load()};
+ const sd=el('select',null,'sel');for(const [k,l] of [['','All trades'],['buy','Purchases'],['sell','Sales']]){const o=el('option',l);o.value=k;o.selected=k===side;sd.append(o)}sd.onchange=()=>{side=sd.value;load()};
+ const q1=el('input',null,'q');q1.placeholder='Ticker';q1.value=tk;q1.style.minWidth='90px';q1.onkeydown=e=>{if(e.key==='Enter'){tk=q1.value.trim().toUpperCase();load()}};
+ const q2=el('input',null,'q');q2.placeholder='Member';q2.value=mb;q2.style.minWidth='130px';q2.onkeydown=e=>{if(e.key==='Enter'){mb=q2.value.trim();load()}};
+ t.append(sel,sd,q1,q2);$('view').replaceChildren(viewFor());
+ $('note').textContent=(D.suspect?D.suspect+' trade(s) dated after their own report were left out as likely typos. ':'')+'Value = midpoint of the disclosed range ("Over $X" counts as $X). SP = spouse, JT = joint, DC = dependent child. Data: disclosures-clerk.house.gov, as of '+fdate(D.as_of)+'.'}
+async function load(){try{const p='/api/political-trades?days='+days+(side?'&side='+side:'')+(tk?'&ticker='+encodeURIComponent(tk):'')+(mb?'&member='+encodeURIComponent(mb):'')+'&limit=150';
+ D=await api(p);$('msg').textContent='';draw()}catch(e){D=null;$('stats').replaceChildren();$('tabs').replaceChildren();$('view').replaceChildren();$('msg').textContent=e.message}}
+async function status(){try{const s=await api('/api/political-trades/status');
+ $('st').textContent=s.state==='running'?'Reading House disclosure reports… the first run can take a few minutes':(s.built_at?'Data through '+fdate(s.as_of)+' · '+s.reports+' reports'+(s.failed?' · '+s.failed+' unreadable':''):'Not built yet')+(s.state==='error'?' · last update failed: '+s.message:'');
+ $('upd').disabled=s.state==='running';return s.state}catch(e){return 'idle'}}
+async function poll(){const s=await status();if(s==='running')setTimeout(poll,3000);else load()}
+$('upd').onclick=async()=>{try{await api('/api/political-trades/refresh',{force:false});poll()}catch(e){$('msg').textContent=e.message}};
+load();poll();
+"""
+
+
+def render_political():
+    return shell("Political trades", "political", _POL_BODY, _COMMON_JS + _POL_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)

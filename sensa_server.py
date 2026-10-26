@@ -27,8 +27,9 @@ from sensa.watch import Watcher
 from sensa.darkpool import DarkPool
 from sensa.insiders import InsiderService
 from sensa.managers import browse
+from sensa.politicians import PoliticiansService
 from sensa.ui import (BASE_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_latest_filings,
-                      render_manager, render_managers, render_smart_money)
+                      render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
@@ -173,7 +174,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -237,6 +238,36 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                 return
             if len(parts) == 2 and parts[0] == "institutional-investor" and _ACC18.match(parts[1]):
                 self._send(200, render_filing(parts[1]), "text/html; charset=utf-8")
+                return
+            if u.path.rstrip("/") == "/political-trades":
+                self._send(200, render_political(), "text/html; charset=utf-8")
+                return
+            if parts[:2] == ["api", "political-trades"] and len(parts) <= 3:
+                if politicians is None:
+                    self._json(503, {"error": "political trades are not configured"})
+                    return
+                try:
+                    if len(parts) == 3:
+                        if parts[2] != "status":
+                            self._send(404, "not found", "text/plain")
+                            return
+                        self._json(200, politicians.status())
+                        return
+                    q = parse_qs(u.query)
+                    days = min(730, max(1, int((q.get("days") or ["90"])[0])))
+                    limit = min(300, max(1, int((q.get("limit") or ["100"])[0])))
+                    side = (q.get("side") or [""])[0]
+                    ticker = (q.get("ticker") or [""])[0].upper()
+                    member = (q.get("member") or [""])[0][:60]
+                    if side not in ("", "buy", "sell") or (ticker and not _SYM.match(ticker)):
+                        self._json(400, {"error": "bad filter"})
+                        return
+                    self._json(200, politicians.overview(days=days, side=side or None, ticker=ticker or None,
+                                                         member=member or None, limit=limit))
+                except ValueError:
+                    self._json(400, {"error": "bad parameters"})
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
                 return
             if u.path.rstrip("/") == "/dark-pool":
                 self._send(200, render_dark_pool(), "text/html; charset=utf-8")
@@ -409,6 +440,12 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                 self._json(400, {"error": "bad json"})
                 return
             route = urlparse(self.path).path
+            if route == "/api/political-trades/refresh":
+                if politicians is None:
+                    self._json(503, {"error": "political trades are not configured"})
+                else:
+                    self._json(200, {"started": politicians.start(force=bool(body.get("force")))})
+                return
             if route == "/api/insider-trades/refresh":
                 if insiders is None:
                     self._json(503, {"error": "insider data is not configured (set SEC_CONTACT)"})
@@ -442,8 +479,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians))
 
 
 def build_hub():
@@ -502,6 +539,14 @@ def build_insiders(contact):
     return InsiderService(data_dir, lambda: http_fetch(page, ua), make_downloader(contact))
 
 
+def build_politicians(contact):
+    """US House Periodic Transaction Reports (no SEC contact needed; one is added to the User-Agent when set)."""
+    from smart_money_build import make_downloader
+    data_dir = os.environ.get("POLITICIANS_DIR", "").strip() or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "data", "politicians")
+    return PoliticiansService(data_dir, make_downloader(contact or "personal-research"))
+
+
 def _smart_loop(smart, hours, stop):
     while not stop.wait(hours * 3600):
         smart.start()                    # no-op unless SEC published a newer quarter
@@ -542,8 +587,12 @@ def main():
     if smart is not None:
         hub.accession_lookup = smart.lookup_accession
     insiders = build_insiders(os.environ.get("SEC_CONTACT", "").strip())
+    politicians = build_politicians(os.environ.get("SEC_CONTACT", "").strip())
+    if a.smart_hours > 0:
+        import threading
+        threading.Thread(target=_smart_loop, args=(politicians, a.smart_hours, threading.Event()), daemon=True).start()
     srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders,
-                      darkpool=DarkPool(http_post))
+                      darkpool=DarkPool(http_post), politicians=politicians)
     if insiders is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()

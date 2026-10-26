@@ -84,6 +84,17 @@ defalcarea pe platforme pentru un ticker.
 - Doar **NMS Tier 1** în totaluri și istoric: FINRA publică Tier 2 cu ~2 săptămâni mai târziu, iar amestecul ar face ultimele
   săptămâni să pară o prăbușire (am prins asta pe date reale).
 
+## Politicieni (`/political-trades`)
+Tranzacțiile membrilor **Camerei Reprezentanților** din rapoartele lor „Periodic Transaction Report" (STOCK Act), citite de la
+**Clerk of the House** (indexul anual + un PDF per raport; gratuit, fără cheie). Vederi: ultimele tranzacții, cele mai cumpărate,
+cele mai vândute, cei mai activi membri; filtre pe fereastră (30–365 de zile), cumpărare/vânzare, ticker și nume.
+- PDF-urile se citesc cu **`pypdf`** (Python pur; `pip install -r requirements.txt`), iar dacă lipsește sau nu extrage nimic, cu `pdftotext -raw`.
+- Rapoartele se descarcă și se parsează o singură dată (`data/politicians/ptr/`); **Update** sau verificarea zilnică aduc doar rapoartele noi.
+- Sumele sunt **intervale** (ex. $1,001–$15,000), deci valorile sunt estimări (mijlocul intervalului; „Over $X" = $X).
+- Limite: **doar Camera** (site-ul Senatului cere acceptarea unor termeni într-o sesiune de browser); ~12% dintre rapoarte sunt PDF-uri scanate
+  (imagini fără text) și nu pot fi citite fără OCR (apar ca „unreadable"); tranzacțiile datate după propriul raport (greșeli de tastare)
+  sunt marcate și excluse din clasamente; rapoartele apar cu până la 45 de zile după tranzacție.
+
 ## Alerte Smart Money (`/smart-money/alerts`)
 Urmărești fonduri după CIK (buton **Follow** pe profilul fondului sau pe pagina de alerte). Când un fond depune un
 13F nou, aplicația compară cu trimestrul anterior și creează un **semnal**: poziții noi, ieșite, crescute, reduse

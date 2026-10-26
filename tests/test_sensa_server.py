@@ -236,7 +236,8 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
         pytest.skip("node not installed")
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
-             srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool()]
+             srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
+             srv.render_political()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -602,3 +603,65 @@ def test_dark_pool_page_and_api():
 
 def test_dark_pool_is_503_when_not_configured():
     assert _dark("/api/dark-pool", dark=None)[0] == 503
+
+
+class FakePol:
+    def __init__(self):
+        self.calls, self.started = [], []
+
+    def overview(self, days=90, side=None, ticker=None, member=None, limit=100):
+        self.calls.append((days, side, ticker, member, limit))
+        return {"as_of": "2026-10-22", "days": days, "latest": [], "top_bought": [], "top_sold": [], "members": [], "trades": 0, "reports": 0}
+
+    def status(self):
+        return {"state": "idle", "message": "", "built_at": "t", "as_of": "2026-10-22", "reports": 2, "failed": 1}
+
+    def start(self, force=False):
+        self.started.append(force)
+        return True
+
+
+def _pol(method, path, body=None, headers=None, pol="default"):
+    p = FakePol() if pol == "default" else pol
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], politicians=p)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        h = {"Content-Type": "application/json"} if method == "POST" else {}
+        h.update(headers or {})
+        c.request(method, path, body=json.dumps(body) if body is not None else None, headers=h)
+        r = c.getresponse()
+        return r.status, r.read(), p
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_political_page_and_api_filters():
+    st, body, _ = _pol("GET", "/political-trades")
+    assert st == 200 and b"Political" in body and b"House" in body
+    _, _, p = _pol("GET", "/api/political-trades?days=30&side=buy&ticker=nvda&member=fields&limit=9999")
+    assert p.calls == [(30, "buy", "NVDA", "fields", 300)]
+    _, _, p = _pol("GET", "/api/political-trades")
+    assert p.calls == [(90, None, None, None, 100)]
+    assert _pol("GET", "/api/political-trades?side=hold")[0] == 400
+    assert _pol("GET", "/api/political-trades?ticker=bad%24")[0] == 400
+    assert _pol("GET", "/api/political-trades?days=x")[0] == 400
+
+
+def test_political_status_refresh_and_guards():
+    assert json.loads(_pol("GET", "/api/political-trades/status")[1])["reports"] == 2
+    st, body, p = _pol("POST", "/api/political-trades/refresh", {"force": True})
+    assert st == 200 and json.loads(body) == {"started": True} and p.started == [True]
+    assert _pol("POST", "/api/political-trades/refresh", {}, headers={"Content-Type": "text/plain"})[0] == 415
+    assert _pol("POST", "/api/political-trades/refresh", {}, headers={"Host": "evil.example.com"})[0] == 403
+
+
+def test_political_endpoints_503_when_off_or_not_built():
+    assert _pol("GET", "/api/political-trades", pol=None)[0] == 503
+
+    class Empty(FakePol):
+        def overview(self, **kw):
+            raise DataUnavailable("No congressional trade data yet. Press Update")
+    st, body, _ = _pol("GET", "/api/political-trades", pol=Empty())
+    assert st == 503 and "Press Update" in json.loads(body)["error"]
