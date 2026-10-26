@@ -6,7 +6,7 @@ Harta site-ului original: `docs/alphacrunching-map.md`.
 ## Carduri și surse (toate gratuite)
 | Card | Sursă | Cheie / configurare |
 |---|---|---|
-| Chart (candlestick + volum, 15m–1day) | cache intraday din `intraday_server.py` (Alpha Vantage) | `ALPHAVANTAGE_API_KEY` gratuit, o singură dată pentru backfill |
+| Chart (candlestick + volum) | **1day**: Alpha Vantage daily (ultimele ~100 sesiuni); **15m–4h**: doar din cache local | `ALPHAVANTAGE_API_KEY` (gratuit) |
 | Top gainers / losers | Cboe delayed quotes (~15 min) | — |
 | Sector heatmap | Cboe, ETF-urile SPDR XL* | — |
 | Options snapshot: lanț, greeks, C/P ratio, **GEX**, 0DTE | Cboe delayed options | — |
@@ -20,19 +20,18 @@ Cache TTL: 60 s (cotații, opțiuni, știri), 5 min (insideri), 1 h (FINRA).
 Date Cboe/Yahoo: doar uz personal / cercetare. Cheile merg doar în variabile de mediu.
 
 ## Graficul candlestick
-Citește cache-ul din `data/intraday/` (același ca `intraday_server.py`, fără rețea la citire).
-Fără cache, cardul arată „No cached data for X". Ca să-l umpli, o dată sau periodic:
-```bash
-export ALPHAVANTAGE_API_KEY=...        # cheie gratuită, ~25 cereri/zi, 5/min
-python intraday_server.py --watchlist AAPL,MSFT,NVDA --backfill-months 3
-```
-Alte directoare: `INTRADAY_DATA_DIR`. Biblioteca `lightweight-charts` v4.2.0 (TradingView, Apache-2.0)
-este acum build-ul real în `markov/intraday/static/` (înainte era un stub de 730 de octeți,
-deci graficul din `intraday_server.py` nu se desena); licența e alături.
+- **1day** (implicit) merge cu cheia gratuită Alpha Vantage: `TIME_SERIES_DAILY` compact, ~100 sesiuni.
+  Se ține 6 h în cache în memorie (cota gratuită e ~25 cereri/zi, 1/s); un eșec se reține 5 min.
+- **15m / 30m / 1h / 4h**: endpoint-ul intraday Alpha Vantage este **premium** acum, deci
+  `intraday_server.py --backfill-months` nu mai merge cu o cheie gratuită. Aceste timeframe-uri apar
+  doar dacă `data/intraday/` (sau `INTRADAY_DATA_DIR`) conține deja bare de 15 min dintr-o altă sursă
+  (ex. `massive_loader.py`); altfel cardul spune clar de ce lipsesc.
+- Biblioteca `lightweight-charts` v4.2.0 (TradingView, Apache-2.0) este acum build-ul real în
+  `markov/intraday/static/` (înainte: stub de 730 de octeți); licența e alături.
 
 ## Rulare
 ```bash
-export FRED_API_KEY=...  SEC_CONTACT="you@example.com"   # opțional: FINNHUB_API_KEY
+export FRED_API_KEY=...  SEC_CONTACT="you@example.com"   # opțional: FINNHUB_API_KEY, ALPHAVANTAGE_API_KEY (grafic)
 python sensa_server.py --watchlist AAPL,MSFT,NVDA,SPY    # http://127.0.0.1:8766
 python -m pytest tests -k sensa
 ```

@@ -78,7 +78,7 @@ function rows(box,list){const t=el('table');for(const r of list){const tr=el('tr
  tr.append(el('td',r.symbol),el('td',r.price.toFixed(2),'mut'),
  el('td',(r.change_pct>0?'+':'')+r.change_pct+'%',r.change_pct>0?'up':'dn'));t.append(tr)}
  box.replaceChildren(list.length?t:el('span','no data','mut'))}
-let chart,candleS,volS,tf='1h';
+let chart,candleS,volS,tf='1day';
 function initChart(){if(chart||!window.LightweightCharts)return;
  chart=LightweightCharts.createChart($('chart'),{autoSize:true,layout:{background:{color:'#161b22'},textColor:'#e6edf3'},
   grid:{vertLines:{color:'#21262d'},horzLines:{color:'#21262d'}},timeScale:{timeVisible:true}});
@@ -231,8 +231,11 @@ def make_server(hub, host, port, watchlist):
 
 
 def build_hub():
-    from markov.intraday.service import Config, get_candles
+    from markov.intraday.alphavantage import AlphaVantageDailyProvider
+    from markov.intraday.service import Config
+    from sensa.candles import make_candles_fn
     data_dir = Config.from_env().data_dir
+    av = os.environ.get("ALPHAVANTAGE_API_KEY", "").strip()
     key = os.environ.get("FINNHUB_API_KEY", "").strip()
 
     def news(symbol):
@@ -242,7 +245,7 @@ def build_hub():
     sec = os.environ.get("SEC_CONTACT", "").strip()
     return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
                edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch),
-               candles_fn=lambda sym, tf: get_candles(sym, tf, data_dir))
+               candles_fn=make_candles_fn(data_dir, AlphaVantageDailyProvider(av) if av else None, secret=av))
 
 
 def main():

@@ -160,3 +160,34 @@ def test_candles_unavailable_when_not_configured():
     import pytest as _p
     with _p.raises(DataUnavailable):
         make().candles("AAA", "1h")
+
+
+def test_daily_candles_are_cached_for_hours_to_protect_the_free_quota():
+    calls, t = [], [0.0]
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, ttl=60, clock=lambda: t[0],
+              candles_fn=lambda s, tf: calls.append((s, tf)) or [{"time": "2026-10-23"}])
+    hub.candles("AAA", "1day")
+    t[0] = 3 * 3600
+    hub.candles("AAA", "1day")
+    assert len(calls) == 1
+    t[0] = 7 * 3600
+    hub.candles("AAA", "1day")
+    assert len(calls) == 2
+
+
+def test_failed_candle_fetch_is_remembered_for_five_minutes():
+    calls, t = [], [0.0]
+
+    def boom(s, tf):
+        calls.append(1)
+        raise DataUnavailable("rate limited")
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, ttl=60, clock=lambda: t[0], candles_fn=boom)
+    import pytest as _p
+    for _ in range(2):
+        with _p.raises(DataUnavailable, match="rate limited"):
+            hub.candles("AAA", "1day")
+    assert len(calls) == 1                     # second raise came from the failure cache
+    t[0] = 301.0
+    with _p.raises(DataUnavailable):
+        hub.candles("AAA", "1day")
+    assert len(calls) == 2

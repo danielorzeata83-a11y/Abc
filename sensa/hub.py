@@ -8,6 +8,8 @@ from markov.data_providers import DataUnavailable
 from sensa.service import SECTOR_ETFS, analyst_consensus, cp_ratio, gex, movers, sector_heatmap
 
 TIMEFRAMES = ("15m", "30m", "1h", "4h", "1day")   # same set as markov.intraday.service
+_DAILY_TTL = 6 * 3600   # daily bars: free sources allow ~25 calls/day
+_FAIL_TTL = 300         # remember a failed fetch this long
 _STRIKE_BAND = 0.15   # show GEX strikes within +/-15% of spot
 
 
@@ -78,7 +80,16 @@ class Hub:
         if tf not in TIMEFRAMES:
             raise ValueError(f"bad timeframe {tf!r}")
         s = symbol.upper()
-        return self._cached(("c", s, tf), lambda: self.candles_fn(s, tf))
+        key = ("c", s, tf)
+        failed = self._cache.get(key + ("err",))
+        if failed and self.clock() - failed[0] < _FAIL_TTL:    # don't re-spend a free quota
+            raise DataUnavailable(failed[1])
+        try:
+            return self._cached(key, lambda: self.candles_fn(s, tf),
+                                ttl=_DAILY_TTL if tf == "1day" else None)
+        except DataUnavailable as e:
+            self._cache[key + ("err",)] = (self.clock(), str(e))
+            raise
 
     def short_volume(self, symbol):
         if self.finra is None:
