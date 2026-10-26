@@ -188,3 +188,56 @@ def test_bars_bad_timeframe_is_400_and_missing_cache_is_503():
 def test_vendored_chart_library_is_served():
     st, ct, body = _get_raw(FakeHub(), "/static/lightweight-charts.js")
     assert st == 200 and "javascript" in ct and len(body) > 10000
+
+
+class MgrHub(FakeHub):
+    def manager(self, cik):
+        return {"cik": cik, "name": "Test Capital LP", "stats": {}, "top": [], "allocation": [], "activity": {}}
+
+    def manager_filings(self, cik, offset=0, limit=20):
+        return {"total": 1, "rows": [{"quarter": "Q2 2026", "off": offset, "lim": limit}]}
+
+
+def test_manager_page_is_html_with_shared_navigation_for_any_slug():
+    st, ct, body = _get_raw(MgrHub(), "/institutional-investor/manager/0001609098-darsana-capital-partners-lp")
+    assert st == 200 and ct.startswith("text/html")
+    assert b"Smart Money" in body and b"0001609098" in body
+
+
+def test_manager_page_rejects_non_numeric_cik():
+    assert _get_raw(MgrHub(), "/institutional-investor/manager/abc-foo")[0] == 404
+
+
+def test_manager_api_endpoints_with_paging_parameters():
+    st, _, body = _get_raw(MgrHub(), "/api/manager/1609098")
+    assert st == 200 and json.loads(body)["name"] == "Test Capital LP"
+    st, _, body = _get_raw(MgrHub(), "/api/manager/1609098/filings?offset=20&limit=20")
+    assert st == 200 and json.loads(body)["rows"][0]["off"] == 20
+
+
+def test_manager_api_clamps_bad_paging_and_rejects_bad_cik():
+    st, _, body = _get_raw(MgrHub(), "/api/manager/1609098/filings?offset=-5&limit=99999")
+    assert st == 200 and json.loads(body)["rows"][0]["off"] == 0 and json.loads(body)["rows"][0]["lim"] <= 50
+    assert _get_raw(MgrHub(), "/api/manager/12ab")[0] == 400
+
+
+def test_institutional_landing_page_lists_example_managers():
+    st, _, body = _get_raw(MgrHub(), "/institutional-investor")
+    assert st == 200 and b"Berkshire" in body
+
+
+def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
+    import re
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not installed")
+    pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional()]
+    for n, html in enumerate(pages):
+        for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
+            f = tmp_path / f"p{n}_{m}.js"
+            f.write_text(script)
+            r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
+            assert r.returncode == 0, (n, r.stderr)

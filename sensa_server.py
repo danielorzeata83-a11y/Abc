@@ -21,10 +21,14 @@ from markov.data_providers import DataUnavailable
 from sensa.edgar import Edgar
 from sensa.finra import Finra
 from sensa.hub import Hub
-from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, yahoo_news
+from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_post, yahoo_news
+from sensa.thirteenf import Figi, ThirteenF
+from sensa.ui import BASE_CSS, nav, render_institutional, render_manager
 
 DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+_CIK = re.compile(r"^[0-9]{1,10}$")
+_MGR_PAGE = re.compile(r"^([0-9]{1,10})(?:-[a-z0-9\-]{0,100})?$")
 DEFAULT_WATCHLIST = ("AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "SPY", "QQQ")
 
 _STATIC_JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "markov", "intraday",
@@ -34,6 +38,7 @@ _PAGE = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Options Dashboard</title>
 <style>
+__BASECSS__
 :root{--bg:#0e1116;--card:#161b22;--line:#21262d;--fg:#e6edf3;--mut:#8b949e;--up:#3fb950;--dn:#f85149;--acc:#58a6ff}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui}
 header{display:flex;gap:1rem;align-items:center;padding:.8rem 1rem;border-bottom:1px solid var(--line)}
@@ -53,8 +58,7 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 .err{color:var(--dn);font-size:.85rem}footer{color:var(--mut);font-size:.75rem;padding:0 1rem 1rem}
 @media(max-width:480px){main{padding:.6rem;gap:.6rem}}
 </style></head><body>
-<header><b>Options Dashboard</b><span>symbol</span>
-<select id="sym">__OPTIONS__</select></header>
+__NAV__<div class="bar"><span class="mut">symbol</span> <select id="sym">__OPTIONS__</select></div>
 <main>
 <section class="card wide"><h3>Chart</h3><div id="tfs"></div><div id="chart" style="height:340px;margin-top:.5rem"></div><div id="chartmsg"></div></section>
 <section class="card"><h3>Top gainers</h3><div id="gain"></div></section>
@@ -143,8 +147,9 @@ setInterval(()=>{movers();sectors()},60000);
 
 
 def render_index(watchlist):
+    page = _PAGE.replace("__BASECSS__", BASE_CSS).replace("__NAV__", nav("dash"))
     opts = "".join(f'<option value="{s}">{s}</option>' for s in watchlist)
-    return (_PAGE.replace("__OPTIONS__", opts)
+    return (page.replace("__OPTIONS__", opts)
                  .replace("__DISCLAIMER__", DISCLAIMER))
 
 
@@ -185,6 +190,35 @@ def _make_handler(hub, watchlist):
                         self._send(200, fh.read(), "application/javascript")
                 except OSError:
                     self._send(404, "missing vendored JS", "text/plain")
+                return
+            if u.path.rstrip("/") == "/institutional-investor":
+                self._send(200, render_institutional(), "text/html; charset=utf-8")
+                return
+            if len(parts) == 3 and parts[0] == "institutional-investor" and parts[1] == "manager":
+                m = _MGR_PAGE.match(parts[2].lower())
+                if not m:
+                    self._send(404, "not found", "text/plain")
+                    return
+                self._send(200, render_manager(m.group(1).zfill(10)), "text/html; charset=utf-8")
+                return
+            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "manager":
+                if not _CIK.match(parts[2]):
+                    self._json(400, {"error": "bad cik"})
+                    return
+                try:
+                    if len(parts) == 3:
+                        self._json(200, hub.manager(parts[2]))
+                    elif len(parts) == 4 and parts[3] == "filings":
+                        q = parse_qs(u.query)
+                        off = max(0, int((q.get("offset") or ["0"])[0] or 0))
+                        lim = min(50, max(1, int((q.get("limit") or ["20"])[0] or 20)))
+                        self._json(200, hub.manager_filings(parts[2], off, lim))
+                    else:
+                        self._send(404, "not found", "text/plain")
+                except ValueError:
+                    self._json(400, {"error": "bad paging"})
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
                 return
             if len(parts) < 2 or parts[0] != "api":
                 self._send(404, "not found", "text/plain")
@@ -243,9 +277,12 @@ def build_hub():
 
     fred = FredApi(os.environ.get("FRED_API_KEY", "").strip())
     sec = os.environ.get("SEC_CONTACT", "").strip()
+    figi = Figi(post=lambda url, payload: http_post(url, payload))
     return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
                edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch),
-               candles_fn=make_candles_fn(data_dir, AlphaVantageDailyProvider(av) if av else None, secret=av))
+               candles_fn=make_candles_fn(data_dir, AlphaVantageDailyProvider(av) if av else None, secret=av),
+               thirteenf=ThirteenF(sec, http_fetch) if sec else None, figi=figi,
+               cache_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f"))
 
 
 def main():

@@ -38,6 +38,17 @@ def http_fetch(url, headers=None):
         raise DataUnavailable(f"fetch failed ({type(e).__name__}) for {url.split('?')[0]}") from e
 
 
+def http_post(url, payload):
+    """POST a JSON payload, return the response text; failures -> DataUnavailable."""
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
+                                 headers=with_user_agent({"Content-Type": "application/json"}))
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.read().decode("utf-8")
+    except (urllib.error.URLError, OSError) as e:
+        raise DataUnavailable(f"post failed ({type(e).__name__}) for {url.split('?')[0]}") from e
+
+
 class Finnhub:
     BASE = "https://finnhub.io/api/v1"
 

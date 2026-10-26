@@ -117,3 +117,35 @@ def test_requests_identify_the_app_with_a_user_agent_unless_overridden():
     assert with_user_agent({})["User-Agent"] == USER_AGENT and "Abc" in USER_AGENT
     assert with_user_agent({"User-Agent": "x"})["User-Agent"] == "x"
     assert with_user_agent(None)["User-Agent"] == USER_AGENT
+
+
+def test_http_post_sends_json_with_user_agent_and_maps_failures(monkeypatch):
+    import io
+    import urllib.error
+    import urllib.request
+    from sensa import providers
+
+    seen = {}
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        seen["method"], seen["body"] = req.get_method(), req.data
+        seen["ct"], seen["ua"] = req.get_header("Content-type"), req.get_header("User-agent")
+        return Resp(b'[{"ok": 1}]')
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    out = providers.http_post("https://x.test/y", [{"a": 1}])
+    assert out == '[{"ok": 1}]' and seen["method"] == "POST"
+    assert json.loads(seen["body"]) == [{"a": 1}]
+    assert seen["ct"] == "application/json" and "Abc" in seen["ua"]
+
+    def boom(req, timeout=None):
+        raise urllib.error.URLError("down")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    with pytest.raises(DataUnavailable):
+        providers.http_post("https://x.test/y?secret=1", [])

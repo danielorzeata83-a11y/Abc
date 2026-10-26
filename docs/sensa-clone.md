@@ -19,6 +19,17 @@ Harta site-ului original: `docs/alphacrunching-map.md`.
 Cache TTL: 60 s (cotații, opțiuni, știri), 5 min (insideri), 1 h (FINRA).
 Date Cboe/Yahoo: doar uz personal / cercetare. Cheile merg doar în variabile de mediu.
 
+## Smart Money: manageri instituționali 13F (`/institutional-investor`)
+Pagină proprie de profil de manager, după structura paginii publice a originalului:
+`/institutional-investor/manager/<CIK>-<slug>` (antet, 4 statistici, valoare în timp 3Y/5Y/10Y/All,
+top holdings, istoric filing-uri cu paginare, alocare, activitate vs trimestrul anterior).
+- Date: **SEC EDGAR** (13F-HR, gratuit; necesită `SEC_CONTACT`). Tickere: **OpenFIGI** (CUSIP→ticker, preferă
+  listarea US). Valorile dinainte de 2023-01-03 sunt în mii de dolari și se scalează.
+- Cifrele coincid cu cele din pagina originală (verificat pe Darsana Capital Partners, CIK 1609098).
+- Filing-urile depuse nu se mai schimbă: se țin în cache pe disc în `data/13f/` (ignorat de git).
+  Prima deschidere a unui manager e lentă (SEC răspunde în 1–4 s pe cerere; ~40 de cereri pentru 20 de filing-uri), apoi instant.
+- Nu există încă: alocarea pe sectoare, compararea a 2 trimestre, filtrele din tabel, logo-uri/fotografii.
+
 ## Graficul candlestick
 - **1day** (implicit) merge cu cheia gratuită Alpha Vantage: `TIME_SERIES_DAILY` compact, ~100 sesiuni.
   Se ține 6 h în cache în memorie (cota gratuită e ~25 cereri/zi, 1/s); un eșec se reține 5 min.

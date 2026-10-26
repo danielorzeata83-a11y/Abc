@@ -191,3 +191,145 @@ def test_failed_candle_fetch_is_remembered_for_five_minutes():
     with _p.raises(DataUnavailable):
         hub.candles("AAA", "1day")
     assert len(calls) == 2
+
+
+class Fake13F:
+    def __init__(self):
+        self.holding_calls = []
+        self.data = {
+            "A2": [{"issuer": "AMAZON COM INC", "cusip": "C1", "value": 600.0, "shares": 20.0},
+                   {"issuer": "ACME CORP", "cusip": "C2", "value": 300.0, "shares": 5.0},
+                   {"issuer": "NEWCO", "cusip": "C3", "value": 100.0, "shares": 1.0}],
+            "A1": [{"issuer": "AMAZON COM INC", "cusip": "C1", "value": 400.0, "shares": 10.0},
+                   {"issuer": "ACME CORP", "cusip": "C2", "value": 300.0, "shares": 9.0},
+                   {"issuer": "GONE INC", "cusip": "C4", "value": 100.0, "shares": 2.0}],
+        }
+
+    def filer(self, cik):
+        f = lambda q, p, d, a: {"quarter": q, "period": p, "filed": d, "accession": a, "form": "13F-HR"}
+        return {"cik": "0000000001", "name": "Test Capital LP", "location": "New York, NY",
+                "filings": [f("Q2 2026", "2026-06-30", "2026-08-14", "A2"),
+                            f("Q1 2026", "2026-03-31", "2026-05-15", "A1")]}
+
+    def holdings(self, cik, acc, filed=None):
+        self.holding_calls.append(acc)
+        return self.data[acc]
+
+
+class FakeFigi:
+    def lookup(self, cusips):
+        return {"C1": "AMZN", "C2": "ACME", "C3": "NEW"}
+
+
+def mgr_hub(f13=None):
+    return Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f13 or Fake13F(), figi=FakeFigi())
+
+
+def test_manager_overview_stats_allocation_and_activity():
+    m = mgr_hub().manager("1")
+    assert m["name"] == "Test Capital LP" and m["latest"]["quarter"] == "Q2 2026"
+    assert m["stats"]["value"] == 1000.0 and m["stats"]["value_change"] == 200.0
+    assert m["stats"]["value_change_pct"] == 25.0
+    assert m["stats"]["holdings"] == 3 and m["stats"]["holdings_change"] == 0
+    assert m["stats"]["filings"] == 2 and m["stats"]["since"] == "2026"
+    assert [h["ticker"] for h in m["top"]] == ["AMZN", "ACME", "NEW"]
+    assert m["top"][0]["weight"] == 60.0
+    assert m["allocation"][0] == {"ticker": "AMZN", "name": "AMAZON COM INC", "value": 600.0, "weight": 60.0}
+    assert m["activity"] == {"new": 1, "increased": 1, "reduced": 1, "exited": 1}
+
+
+def test_manager_filing_rows_are_paged_and_cached_forever():
+    f = Fake13F()
+    hub = mgr_hub(f)
+    page = hub.manager_filings("1", offset=0, limit=20)
+    assert page["total"] == 2
+    assert page["rows"][0] == {"quarter": "Q2 2026", "holdings": 3, "value": 1000.0,
+                               "top": ["AMZN", "ACME", "NEW"], "form": "13F-HR",
+                               "filed": "2026-08-14", "accession": "A2"}
+    hub.manager_filings("1", 0, 20); hub.manager("1")
+    assert sorted(f.holding_calls) == ["A1", "A2"]         # each filing fetched once
+    assert hub.manager_filings("1", offset=1, limit=1)["rows"][0]["quarter"] == "Q1 2026"
+
+
+def test_manager_unavailable_without_sec_client():
+    with pytest.raises(DataUnavailable):
+        make().manager("1")
+
+
+def test_manager_since_is_the_year_the_first_filing_was_made_not_its_period():
+    class Old(Fake13F):
+        def filer(self, cik):
+            f = super().filer(cik)
+            f["filings"].append({"quarter": "Q4 2014", "period": "2014-12-31", "filed": "2015-02-14",
+                                 "accession": "A0", "form": "13F-HR"})
+            return f
+    assert mgr_hub(Old()).manager("1")["stats"]["since"] == "2015"
+
+
+def test_manager_filings_downloads_filings_concurrently():
+    import threading
+
+    class Slow(Fake13F):
+        def __init__(self):
+            super().__init__()
+            self.gate = threading.Barrier(2, timeout=3)   # both fetches must be in flight together
+
+        def holdings(self, cik, acc, filed=None):
+            self.gate.wait()                               # BrokenBarrierError if run one-by-one
+            return super().holdings(cik, acc, filed)
+    page = mgr_hub(Slow()).manager_filings("1", 0, 20)
+    assert [r["quarter"] for r in page["rows"]] == ["Q2 2026", "Q1 2026"]
+
+
+def test_manager_overview_fetches_current_and_previous_quarter_concurrently():
+    import threading
+
+    class Slow(Fake13F):
+        def __init__(self):
+            super().__init__()
+            self.gate = threading.Barrier(2, timeout=3)
+
+        def holdings(self, cik, acc, filed=None):
+            self.gate.wait()
+            return super().holdings(cik, acc, filed)
+    assert mgr_hub(Slow()).manager("1")["stats"]["holdings"] == 3
+
+
+def test_unmapped_cusip_falls_back_to_a_short_issuer_name_not_the_raw_code():
+    class NoFigi:
+        def lookup(self, cusips):
+            return {}
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=Fake13F(), figi=NoFigi())
+    top = hub.manager("1")["top"]
+    assert top[0]["ticker"] == "AMAZON COM I"[:12] and not top[0]["ticker"].startswith("C")
+
+
+def test_filings_are_cached_on_disk_so_a_fresh_hub_needs_no_sec_requests(tmp_path):
+    f1 = Fake13F()
+    h1 = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f1, figi=FakeFigi(), cache_dir=str(tmp_path))
+    h1.manager_filings("1", 0, 20)
+    assert sorted(f1.holding_calls) == ["A1", "A2"]
+    f2 = Fake13F()
+    h2 = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f2, figi=FakeFigi(), cache_dir=str(tmp_path))
+    page = h2.manager_filings("1", 0, 20)
+    assert f2.holding_calls == [] and page["rows"][0]["value"] == 1000.0     # served from disk
+
+
+def test_corrupt_disk_cache_entry_is_ignored_and_refetched(tmp_path):
+    f1 = Fake13F()
+    h1 = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f1, figi=FakeFigi(), cache_dir=str(tmp_path))
+    h1.manager_filings("1", 0, 20)
+    for p in tmp_path.rglob("*.json"):
+        p.write_text("{not json")
+    f2 = Fake13F()
+    h2 = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=f2, figi=FakeFigi(), cache_dir=str(tmp_path))
+    assert h2.manager_filings("1", 0, 20)["rows"][0]["holdings"] == 3
+    assert sorted(f2.holding_calls) == ["A1", "A2"]
+
+
+def test_disk_cache_rejects_path_traversal_in_identifiers(tmp_path):
+    h = Hub(FakeCboe(), lambda s: [], lambda: None, thirteenf=Fake13F(), figi=FakeFigi(), cache_dir=str(tmp_path))
+    with pytest.raises(ValueError):
+        h._raw("../../etc", {"accession": "A1", "filed": "2026-01-01"})
+    with pytest.raises(ValueError):
+        h._raw("1", {"accession": "../x", "filed": "2026-01-01"})

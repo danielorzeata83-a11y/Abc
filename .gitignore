@@ -5,3 +5,4 @@ data/*.csv
 .venv/
 .env
 data/intraday/
+data/13f/
