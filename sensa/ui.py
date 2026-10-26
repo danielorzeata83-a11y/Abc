@@ -33,20 +33,36 @@ NAV_ITEMS = (("dash", "/", "Dashboard"), ("smart", "/smart-money", "Smart Money"
              ("alerts", "/smart-money/alerts", "Alerts"))
 
 
+LINK_JS = r"""
+function tkLink(sym,cls){const a=document.createElement('a');a.textContent=sym;
+ if(/^[A-Z][A-Z0-9.\-]{0,9}$/.test(sym)){a.href='/stock/'+encodeURIComponent(sym);a.className=(cls||'')+' tk-link'}return a}
+(function(){const f=document.getElementById('gs');if(!f)return;
+ f.onsubmit=e=>{e.preventDefault();const v=document.getElementById('gsq').value.trim().toUpperCase();
+  if(/^[A-Z][A-Z0-9.\-]{0,9}$/.test(v))location.href='/stock/'+encodeURIComponent(v)}})();
+"""
+
+NAV_CSS = r"""
+.nav .gs{margin-left:auto}.nav .gs input{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.3rem .6rem;font:inherit;width:210px}.nav .gs input:not(:placeholder-shown){text-transform:uppercase}
+a.tk-link{font-weight:700}
+"""
+
+
 def nav(active):
     items = "".join(f'<a class="item{" on" if k == active else ""}" href="{h}">{t}</a>'
                     for k, h, t in NAV_ITEMS)
-    return f'<nav class="nav"><span class="brand">Options<i>Dash</i></span>{items}</nav>'
+    search = ('<form id="gs" class="gs" autocomplete="off"><input id="gsq" placeholder="Open a stock: AAPL" maxlength="10" '
+              'aria-label="Open a stock page"></form>')
+    return f'<nav class="nav"><span class="brand">Options<i>Dash</i></span>{items}{search}</nav>'
 
 
 def shell(title, active, body, script="", extra_css=""):
     return (f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>{title}</title><style>{BASE_CSS}{extra_css}</style></head><body>'
+            f'<title>{title}</title><style>{BASE_CSS}{NAV_CSS}{extra_css}</style></head><body>'
             f'{nav(active)}{body}'
             f'<footer class="foot">Research artifact - not investment advice. '
             f'13F data: SEC EDGAR. Tickers: OpenFIGI.</footer>'
-            f'<script>{script}</script></body></html>')
+            f'<script>{LINK_JS}</script><script>{script}</script></body></html>')
 
 
 # ---------------------------------------------------------------- manager page
@@ -143,7 +159,7 @@ function drawHeader(m){header=m;const s=m.stats;
   stat('Latest filing',fdate(m.latest.filed),m.latest.form+' · '+m.latest.quarter));
  const t=$('tops');t.replaceChildren();
  for(const h of m.top){const d=el('div',null,'top'),b=el('div',null,'bar'),i=el('i');i.style.width=Math.min(h.weight,100)+'%';b.append(i);
-  d.append(el('b',h.ticker),el('div',money(h.value),'mut'),el('div',h.weight+'% of portfolio','mut'),b);t.append(d)}
+  d.append(tkLink(h.ticker),el('div',money(h.value),'mut'),el('div',h.weight+'% of portfolio','mut'),b);t.append(d)}
  drawAlloc(m);drawAct(m)}
 function drawAlloc(m){const box=$('donut');box.replaceChildren();const ns='http://www.w3.org/2000/svg',R=64,C=2*Math.PI*R;
  const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 180 180');svg.setAttribute('width','100%');svg.style.maxHeight='220px';
@@ -158,7 +174,7 @@ function drawAlloc(m){const box=$('donut');box.replaceChildren();const ns='http:
  svg.append(t1,t2);box.append(svg);
  const a=$('alloc');a.replaceChildren();
  m.allocation.forEach((x,i)=>{const r=el('div',null,'alloc-row'),sw=el('span',null,'sw');sw.style.background=PAL[i%PAL.length];
-  r.append(sw,el('span',x.ticker,'tk'),el('span',x.name,'nm'),el('span',x.weight.toFixed(2)+'%','w'));a.append(r)})}
+  const tkc=el('span',null,'tk');tkc.append(tkLink(x.ticker));r.append(sw,tkc,el('span',x.name,'nm'),el('span',x.weight.toFixed(2)+'%','w'));a.append(r)})}
 function drawAct(m){const a=m.activity,A=$('act');A.replaceChildren();
  $('acth').textContent='Recent Activity ('+m.latest.quarter+')';
  for(const [n,txt,sym,cls] of [[a.new,'new position'+(a.new==1?'':'s')+' added','+','up'],[a.increased,'position'+(a.increased==1?'':'s')+' increased','↑','up'],
@@ -312,7 +328,7 @@ function draw(w){const fl=$('fl');fl.replaceChildren();
   top.append(a,el('span',e.quarter+' · '+e.form+(e.amended?' (amended)':'')+' · filed '+e.filed,'mut'));
   const c=el('div',null,'cnt');for(const k of ['new','exited','increased','reduced']){c.append(el('span',e.counts[k]+' '+k))}
   const ul=el('ul');for(const ch of e.changes.slice(0,8)){const li=el('li');li.append(el('span',ch.type.toUpperCase(),'tag '+ch.type),
-    document.createTextNode(ch.ticker+' '+money(ch.type==='exited'?ch.value_prev:ch.value_now)+' ('+(ch.shares_now-ch.shares_prev>=0?'+':'')+Math.round(ch.shares_now-ch.shares_prev).toLocaleString()+' sh)'));ul.append(li)}
+    tkLink(ch.ticker),document.createTextNode(' '+money(ch.type==='exited'?ch.value_prev:ch.value_now)+' ('+(ch.shares_now-ch.shares_prev>=0?'+':'')+Math.round(ch.shares_now-ch.shares_prev).toLocaleString()+' sh)'));ul.append(li)}
   d.append(top,c,ul);ev.append(d)}}
 async function load(){try{draw(await api('/api/watch'));$('msg').textContent=''}catch(e){$('msg').textContent=e.message}}
 $('f').onsubmit=async e=>{e.preventDefault();const v=$('cik').value.trim().replace(/^0+/,'');
@@ -377,7 +393,7 @@ function table(cols,rows,defKey){const t=el('table',null,'t'),thead=el('thead'),
 const cell=(txt,c)=>el('td',txt,c);
 function heldView(){const rows=O.stocks.filter(s=>okKind(s)&&!s.gone);
  const cols=[{k:'ticker',l:'Ticker',dir:1,r:s=>{const d=el('td');
-   if(/^[A-Z][A-Z0-9.\-]{0,9}$/.test(s.ticker)){const a=el('a',s.ticker);a.href='/stock/'+encodeURIComponent(s.ticker)+'/investors';a.style.fontWeight='700';d.append(a)}else d.append(el('b',s.ticker));return d}},
+   d.append(tkLink(s.ticker));return d}},
   {k:'issuer',l:'Company',dir:1,f:s=>s.issuer},
   {k:'holders',l:'Funds',n:1,r:s=>cell(s.holders+' / '+O.cohort)},
   {k:'dh',l:'vs last Q',n:1,v:s=>s.holders-s.holders_prev,r:s=>cell((s.holders-s.holders_prev>0?'+':'')+(s.holders-s.holders_prev),cls(s.holders-s.holders_prev))},
@@ -389,7 +405,7 @@ function heldView(){const rows=O.stocks.filter(s=>okKind(s)&&!s.gone);
  return table(cols,rows,'holders')}
 function list(title,rows,right,sub){const c=el('section',null,'card');c.append(el('h3',title));if(sub)c.append(el('div',sub,'note'));
  if(!rows.length)c.append(el('div','Nothing to show','mut'));
- for(const s of rows.slice(0,10)){const r=el('div',null,'mrow'),l=el('span'),b=el('b',s.ticker);l.append(b,document.createTextNode(s.issuer));
+ for(const s of rows.slice(0,10)){const r=el('div',null,'mrow'),l=el('span'),b=tkLink(s.ticker);l.append(b,document.createTextNode(' '+s.issuer));
   const rr=el('span',null,'r');right(s,rr);r.append(l,rr);c.append(r)}return c}
 function movesView(){const st=O.stocks.filter(core),w=el('div',null,'moves');
  const flow=(s,r)=>{r.append(el('span',smoney(s.active_flow),cls(s.active_flow)),el('span','  '+s.holders+'/'+O.cohort,'mut'))};
@@ -405,7 +421,7 @@ function fundsView(){const cols=[{k:'rank',l:'#',dir:1,f:f=>String(f.rank)},
   {k:'aum',l:'Reported value',n:1,f:f=>money(f.aum)},
   {k:'aum_change_pct',l:'vs last Q',n:1,v:f=>f.aum_change_pct==null?-1e9:f.aum_change_pct,r:f=>cell(pct(f.aum_change_pct),cls(f.aum_change_pct))},
   {k:'positions',l:'Positions',n:1,f:f=>String(f.positions)},
-  {k:'top',l:'Top holdings',sort:false,r:f=>{const d=el('td');for(const t of f.top.slice(0,3))d.append(el('span',t.ticker,'chip'));return d}},
+  {k:'top',l:'Top holdings',sort:false,r:f=>{const d=el('td');for(const t of f.top.slice(0,3)){const c=el('span',null,'chip');c.append(tkLink(t.ticker));d.append(c)}return d}},
   {k:'top10_pct',l:'Top 10',n:1,f:f=>f.top10_pct.toFixed(1)+'%'},
   {k:'turnover_pct',l:'Turnover',n:1,v:f=>f.turnover_pct==null?-1:f.turnover_pct,f:f=>f.turnover_pct==null?'-':f.turnover_pct.toFixed(1)+'%'},
   {k:'new',l:'New',n:1,v:f=>f.new==null?-1:f.new,f:f=>f.new==null?'-':String(f.new)},
@@ -540,7 +556,7 @@ const ACC="__ACC__";
   stat('Positions',String(s.positions),s.positions_change==null?'':(s.positions_change>=0?'↑ ':'↓ ')+Math.abs(s.positions_change)+' vs '+d.prev_quarter),
   stat('Period',d.period,d.form),stat('Top position',d.holdings[0]?d.holdings[0].ticker:'-',d.holdings[0]?d.holdings[0].weight+'% of portfolio':''));
  const tb=$('rows');tb.replaceChildren();
- for(const h of d.holdings){const tr=el('tr'),t=el('td'),b=el('b',h.ticker);t.append(b);
+ for(const h of d.holdings){const tr=el('tr'),t=el('td'),b=tkLink(h.ticker);t.append(b);
   const ch=el('td');if(h.change){const k=h.change.type,sign=h.change.shares_delta>0?'+':'';
    ch.append(el('span',k.toUpperCase(),'chip pill'),document.createTextNode(' '+sign+Math.round(h.change.shares_delta).toLocaleString()+' sh'+(h.change.pct==null?'':' ('+(h.change.pct>0?'+':'')+h.change.pct+'%)')));
    ch.className=k==='new'||k==='increased'?'up':'dn'}else ch.textContent='-';
@@ -588,7 +604,7 @@ function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c
  const tb=el('tbody');for(const r of rows){const tr=el('tr');for(const c of cols){const td=c.r?c.r(r):el('td',c.f(r));if(c.n)td.classList.add('n');tr.append(td)}tb.append(tr)}
  if(!rows.length){const tr=el('tr'),td=el('td','No trades in this window','mut');td.colSpan=cols.length;tr.append(td);tb.append(tr)}
  t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
-const tick=r=>{const d=el('td');d.append(el('b',r.symbol));return d};
+const tick=r=>{const d=el('td');d.append(tkLink(r.symbol));return d};
 function viewFor(){const base=[{l:'Ticker',r:tick},{l:'Company',f:r=>r.issuer}];
  if(sym)return D.sym?table([{l:'Date',f:r=>fdate(r.date)},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},
   {l:'Side',r:r=>el('td',r.side.toUpperCase()+(r.plan?' (10b5-1)':''),side(r.side))},{l:'Shares',n:1,f:r=>Math.round(r.shares).toLocaleString()},
@@ -671,7 +687,7 @@ $('sq').onkeydown=e=>{if(e.key==='Enter'){const v=e.target.value.trim().toUpperC
  $('stats').replaceChildren(stat('Week of',fdate(d.week),'latest published by FINRA'),stat('ATS shares',d.total_shares==null?'-':num(d.total_shares),pctc(d.total_change_pct)+' vs prior week'),
   stat('ATS trades',d.total_trades==null?'-':num(d.total_trades),'all venues'),stat('Venues',String(d.venues.length)+'+','reporting that week'));
  const tb=$('rows');tb.replaceChildren();
- d.top.forEach((r,i)=>{const tr=el('tr'),t=el('td'),a=el('a',r.symbol);a.href='#';a.onclick=e=>{e.preventDefault();$('sq').value=r.symbol;showSym(r.symbol)};t.append(a);
+ d.top.forEach((r,i)=>{const tr=el('tr'),t=el('td'),a=tkLink(r.symbol);t.append(a);const vb=el('a',' venues');vb.href='#';vb.className='mut';vb.onclick=e=>{e.preventDefault();$('sq').value=r.symbol;showSym(r.symbol)};t.append(vb);
   const ch=el('td',pctc(r.change_pct),'n '+cc(r.change_pct));
   tr.append(el('td',String(i+1)),t,el('td',r.name),el('td',num(r.shares),'n'),el('td',num(r.trades),'n'),el('td',r.avg_trade==null?'-':Math.round(r.avg_trade).toLocaleString()+' sh','n'),ch);tb.append(tr)});
  $('hist').replaceChildren(bars(d.history),el('div','Weekly shares traded on ATS venues, last '+d.history.length+' weeks','note'));
@@ -701,7 +717,8 @@ _POL_BODY = r"""
 """
 
 _POL_JS = r"""
-let D=null,tab='latest',days=90,side='',tk='',mb='';
+const QS=new URLSearchParams(location.search);
+let D=null,tab='latest',days=QS.get('member')||QS.get('ticker')?365:90,side='',tk=(QS.get('ticker')||'').toUpperCase().slice(0,10),mb=(QS.get('member')||'').slice(0,60);
 const range=r=>r.amount_high?money(r.amount_low)+' – '+money(r.amount_high):'Over '+money(r.amount_low);
 const kindc=t=>t==='purchase'?'up':t==='exchange'?'mut':'dn';
 function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c=>{const th=el('th',c.l);if(c.n)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);
@@ -709,12 +726,12 @@ function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c
  if(!rows.length){const tr=el('tr'),td=el('td','No trades match','mut');td.colSpan=cols.length;tr.append(td);tb.append(tr)}
  t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
 function viewFor(){
- if(tab==='latest')return table([{l:'Traded',f:r=>fdate(r.date)},{l:'Member',f:r=>r.member+' ('+r.state_dst+')'},
-  {l:'Asset',r:r=>{const d=el('td');if(r.ticker)d.append(el('b',r.ticker+' '));d.append(document.createTextNode(r.asset));return d}},
+ if(tab==='latest')return table([{l:'Traded',f:r=>fdate(r.date)},{l:'Member',r:r=>{const d=el('td'),a=el('a',r.member);a.href='/political-trades?member='+encodeURIComponent(r.member);d.append(a,document.createTextNode(' ('+r.state_dst+')'));return d}},
+  {l:'Asset',r:r=>{const d=el('td');if(r.ticker){d.append(tkLink(r.ticker),document.createTextNode(' '))}d.append(document.createTextNode(r.asset));return d}},
   {l:'Type',r:r=>el('td',r.type+(r.owner?' ('+r.owner+')':''),kindc(r.type))},{l:'Amount',n:1,f:range},{l:'Reported',f:r=>fdate(r.filed)}],D.latest);
- if(tab==='members')return table([{l:'Member',f:r=>r.member},{l:'District',f:r=>r.state_dst},{l:'Trades',n:1,f:r=>String(r.trades)},{l:'Est. volume',n:1,f:r=>money(r.value)}],D.members);
+ if(tab==='members')return table([{l:'Member',r:r=>{const d=el('td'),a=el('a',r.member);a.href='/political-trades?member='+encodeURIComponent(r.member);d.append(a);return d}},{l:'District',f:r=>r.state_dst},{l:'Trades',n:1,f:r=>String(r.trades)},{l:'Est. volume',n:1,f:r=>money(r.value)}],D.members);
  const rows=tab==='bought'?D.top_bought:D.top_sold;
- return table([{l:'Ticker',r:r=>{const d=el('td');d.append(el('b',r.ticker));return d}},{l:'Asset',f:r=>r.asset},{l:'Members',n:1,f:r=>String(r.members)},
+ return table([{l:'Ticker',r:r=>{const d=el('td');d.append(tkLink(r.ticker));return d}},{l:'Asset',f:r=>r.asset},{l:'Members',n:1,f:r=>String(r.members)},
   {l:'Trades',n:1,f:r=>String(r.trades)},{l:'Est. value',n:1,r:r=>el('td',money(r.value),tab==='bought'?'up':'dn')}],rows)}
 function draw(){if(!D)return;
  $('stats').replaceChildren(stat('Reports',String(D.reports),'last '+D.days+' days'),stat('Trades',String(D.trades),'disclosed'),stat('Latest report',fdate(D.as_of),'House Clerk'),stat('Source','House','Periodic Transaction Reports'));
@@ -756,7 +773,7 @@ th.s{cursor:pointer;user-select:none}th.s:hover{color:var(--fg)}
 
 _INV_BODY = r"""
 <div class="wrap">
- <div class="crumb"><a href="/institutional-investor">Institutional</a> &nbsp;›&nbsp; <b>__TICKER__ investors</b></div>
+ <div class="crumb"><a href="/stock/__TICKER__">__TICKER__</a> &nbsp;›&nbsp; <b>Institutional investors</b></div>
  <h1 class="title" style="font-size:2rem">__TICKER__ institutional investors</h1>
  <p class="mut" id="sub">Who holds this stock, from Form 13F filings.</p>
  <form id="f" class="sb"><input id="tk" class="tk" placeholder="Ticker" maxlength="10" aria-label="Ticker">
@@ -828,3 +845,124 @@ def render_investors(ticker):
         raise ValueError("bad ticker")
     return shell(f"{ticker} institutional investors", "inst", _INV_BODY.replace("__TICKER__", ticker),
                  _INV_JS.replace("__TICKER__", ticker), _MANAGER_CSS + _LIST_CSS + _INV_CSS)
+
+
+# ------------------------------------------------------------------ one stock: everything about a ticker
+_STOCK_CSS = r"""
+.hd{display:flex;gap:1.2rem;align-items:flex-end;flex-wrap:wrap;margin:.2rem 0 .6rem}
+.px{font-size:2.2rem;font-weight:800}.chg{font-size:1.05rem;font-weight:600}
+.jump{display:flex;gap:.4rem;flex-wrap:wrap;margin:.4rem 0 1rem}.jump a{padding:.25rem .65rem;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:.15rem .8rem}.kv span:nth-child(odd){color:var(--mut)}.kv span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
+.news a{color:var(--fg)}.news li{margin:.5rem 0;list-style:none}.news ul{padding:0;margin:0}
+.tf{background:var(--card2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:.15rem .6rem;margin-right:4px;cursor:pointer}.tf.on{border-color:var(--acc);color:var(--acc)}
+.sm{font-size:.82rem}.sm td,.sm th{padding:.3rem .4rem}
+.grid{grid-template-columns:minmax(0,1.5fr) minmax(380px,1fr)}@media(max-width:1000px){.grid{grid-template-columns:1fr}}
+"""
+
+_STOCK_BODY = r"""
+<div class="wrap">
+ <div class="crumb"><a href="/">Dashboard</a> &nbsp;›&nbsp; <b>__T__</b></div>
+ <div class="hd"><div><h1 class="title" style="font-size:2.2rem;margin:0">__T__</h1><div class="mut" id="co">Loading…</div></div>
+  <div><span class="px" id="px">-</span> <span class="chg" id="chg"></span><div class="mut sm" id="asof"></div></div></div>
+ <div class="jump"><a href="#chartc">Chart</a><a href="#optc">Options</a><a href="#newsc">News</a><a href="#instc">Institutions</a>
+  <a href="#insc">Insiders</a><a href="#darkc">Dark pool</a><a href="#polc">Politicians</a><a href="/stock/__T__/investors">All investors →</a></div>
+ <div id="msg" class="err"></div>
+ <div class="stats" id="stats"></div>
+ <div class="grid">
+  <div class="col">
+   <section class="card" id="chartc"><div class="head"><h3>Chart</h3><div id="tfs"></div></div><div id="chart" style="height:340px"></div><div id="chartmsg"></div></section>
+   <section class="card news" id="newsc"><h3>News</h3><div id="news" class="mut">Loading…</div></section>
+   <section class="card" id="insc"><h3>Insider trades</h3><div id="ins" class="mut">Loading…</div></section>
+   <section class="card" id="polc"><h3>Politicians (US House)</h3><div id="pol" class="mut">Loading…</div></section>
+  </div>
+  <div class="col">
+   <section class="card" id="optc"><h3>Options overview</h3><div id="opts" class="mut">Loading…</div></section>
+   <section class="card"><h3>Analyst consensus</h3><div id="analyst" class="mut">Loading…</div></section>
+   <section class="card" id="instc"><h3>Top institutional holders</h3><div id="inst" class="mut">Matching the ticker to its 13F security… the first visit to a stock can take up to a minute.</div></section>
+   <section class="card" id="darkc"><h3>Dark pool (ATS)</h3><div id="dark" class="mut">Loading…</div></section>
+   <section class="card"><h3>Short volume (FINRA)</h3><div id="shv" class="mut">Loading…</div></section>
+  </div>
+ </div>
+</div>
+<script src="/static/lightweight-charts.js"></script>
+"""
+
+_STOCK_JS = r"""
+const T="__T__";
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const $=id=>document.getElementById(id);
+const money=v=>{if(v==null)return '-';const a=Math.abs(v),s=a>=1e12?'$'+(a/1e12).toFixed(2)+'T':a>=1e9?'$'+(a/1e9).toFixed(2)+'B':a>=1e6?'$'+(a/1e6).toFixed(2)+'M':'$'+Math.round(a).toLocaleString();return (v<0?'-':'')+s};
+const num=v=>v==null?'-':Math.round(v).toLocaleString();
+const px=v=>v==null?'-':v.toFixed(2);
+const fdate=d=>d?new Date(d+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}):'-';
+const cls=v=>v>0?'up':v<0?'dn':'mut';
+const safeUrl=u=>/^https?:\/\//i.test(u)?u:null;
+async function api(p){const r=await fetch(p),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+const fail=(b,e)=>b.replaceChildren(el('div',String(e.message||e),'err'));
+const none=(b,t)=>b.replaceChildren(el('div',t,'mut'));
+function kv(rows){const d=el('div',null,'kv');for(const [k,v,c] of rows){d.append(el('span',k),el('span',v,c))}return d}
+function link(text,href,cls){const a=el('a',text,cls);a.href=href;return a}
+function table(head,rows,numCols){const t=el('table',null,'t sm'),h=el('tr');head.forEach((x,i)=>{const th=el('th',x);if(numCols.includes(i))th.className='n';h.append(th)});
+ const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+ for(const r of rows){const tr=el('tr');r.forEach((c,i)=>{const td=c instanceof Node?(()=>{const d=el('td');d.append(c);return d})():el('td',c);if(numCols.includes(i))td.classList.add('n');tr.append(td)});tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+let Q=null,C=null;
+function drawQuote(){if(!Q)return;
+ $('px').textContent='$'+px(Q.price);const ch=Q.change_pct;
+ $('chg').textContent=(Q.change==null?'':(Q.change>0?'+':'')+Q.change.toFixed(2)+' ')+(ch==null?'':'('+(ch>0?'+':'')+ch.toFixed(2)+'%)');$('chg').className='chg '+cls(ch);
+ $('asof').textContent=Q.last_trade_time?'Delayed quote · last trade '+Q.last_trade_time.replace('T',' '):'Delayed quote';
+ const cap=C&&C.shares_outstanding&&Q.price?C.shares_outstanding*Q.price:null;
+ $('stats').replaceChildren(
+  (()=>{const c=stat('Day range',px(Q.low)+' – '+px(Q.high),'open '+px(Q.open));c.querySelector('.v').style.fontSize='1.35rem';return c})(),stat('Previous close',px(Q.prev_close),'bid '+px(Q.bid)+' / ask '+px(Q.ask)),
+  stat('Volume',num(Q.volume),'shares today'),stat('Market cap',money(cap),C&&C.shares_outstanding?num(C.shares_outstanding)+' shares':'share count unavailable'),
+  stat('IV (30d)',Q.iv30==null?'-':Q.iv30.toFixed(1)+'%',Q.iv30_change==null?'':(Q.iv30_change>0?'+':'')+Q.iv30_change.toFixed(2)+' today'))}
+function stat(k,v,d){const c=el('div',null,'card stat');c.append(el('div',k,'k'),el('div',v,'v'),el('div',d||'','d mut'));return c}
+(async()=>{try{Q=await api('/api/quote/'+T);drawQuote()}catch(e){$('msg').textContent='No quote for '+T+': '+e.message}})();
+(async()=>{try{C=await api('/api/company/'+T);if(C){document.title=T+' - '+C.name;
+  $('co').replaceChildren(el('span',C.name),el('span',' · '+C.exchange+(C.industry?' · '+C.industry:''),'mut'));drawQuote()}else $('co').textContent='No SEC company record (ETF, fund or foreign issuer)'}
+ catch(e){$('co').textContent=''}})();
+let chart,cs,vs,tf='1day';
+function initChart(){if(chart||!window.LightweightCharts)return;
+ chart=LightweightCharts.createChart($('chart'),{autoSize:true,layout:{background:{color:'#0a1527'},textColor:'#e8eefb'},grid:{vertLines:{color:'#16263f'},horzLines:{color:'#16263f'}},timeScale:{timeVisible:true}});
+ cs=chart.addCandlestickSeries();vs=chart.addHistogramSeries({priceScaleId:'',priceFormat:{type:'volume'},color:'#58a6ff55'});vs.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}})}
+async function bars(){const m=$('chartmsg');m.textContent='';initChart();if(!chart){m.append(el('div','chart library failed to load','err'));return}
+ try{const r=await api('/api/bars/'+T+'?tf='+tf);cs.setData(r.map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close})));vs.setData(r.map(b=>({time:b.time,value:b.volume})));chart.timeScale().fitContent()}
+ catch(e){cs.setData([]);vs.setData([]);fail(m,e)}}
+for(const t of ['15m','1h','4h','1day']){const b=el('button',t,'tf'+(t===tf?' on':''));b.onclick=()=>{tf=t;document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('on',x===b));bars()};$('tfs').append(b)}
+bars();
+(async()=>{const b=$('news');try{const n=await api('/api/news/'+T);if(!n.length)return none(b,'No recent headlines');const u=el('ul');
+ for(const x of n){const li=el('li'),h=safeUrl(x.url),a=el('a',x.headline);if(h){a.href=h;a.target='_blank';a.rel='noopener noreferrer'}li.append(a,el('div',(x.source||'')+(x.datetime?' · '+x.datetime.slice(0,22):''),'mut sm'));u.append(li)}b.replaceChildren(u)}catch(e){fail(b,e)}})();
+(async()=>{const b=$('opts');try{const o=await api('/api/options/'+T);if(!o)return none(b,'No listed options');const c=o.cp;const m=x=>(x/1e6).toFixed(1)+'M';
+ b.replaceChildren(kv([['Expiration',o.expiration+(o.zero_dte?' (0DTE)':'')],['Spot',px(o.spot)],['Net GEX per 1%',m(o.gex.net_gex),cls(o.gex.net_gex)],['Call GEX',m(o.gex.call_gex)],['Put GEX',m(o.gex.put_gex)],
+  ['Call volume',num(c.call_volume)],['Put volume',num(c.put_volume)],['Put/Call volume',c.volume_ratio==null?'-':String(c.volume_ratio)],['Call/Put open int.',c.oi_ratio==null?'-':String(c.oi_ratio)],['Contracts',String(o.chain.length)]]))}catch(e){none(b,'No options data for this symbol (not optionable, or the feed is unavailable).')}})();
+(async()=>{const b=$('analyst');try{const a=await api('/api/analyst/'+T);if(!a)return none(b,'No analyst coverage (or FINNHUB_API_KEY is not set).');const tot=a.buy+a.hold+a.sell||1,bar=el('div');bar.style.cssText='display:flex;height:10px;border-radius:5px;overflow:hidden;margin:.5rem 0';
+ for(const [n,c] of [[a.buy,'var(--up)'],[a.hold,'var(--mut)'],[a.sell,'var(--dn)']]){const d=el('div');d.style.cssText='width:'+n/tot*100+'%;background:'+c;bar.append(d)}
+ b.replaceChildren(el('div',a.verdict,'v '+(a.verdict==='Buy'?'up':a.verdict==='Sell'?'dn':'mut')),bar,el('div','Buy '+a.buy+' · Hold '+a.hold+' · Sell '+a.sell+' ('+a.period+')','mut sm'))}catch(e){fail(b,e)}})();
+(async()=>{const b=$('inst');try{const d=await api('/api/investors/'+T+'?limit=8');const s=d.summary;
+ if(!s.filerCount)return none(b,'No 13F holders found');
+ const head=el('div',s.filerCount.toLocaleString()+' institutions hold '+(s.heldPct==null?num(s.stockShares)+' shares':s.heldPct+'% of the company')+' ('+d.coverage.quarter+').','sm');
+ const rows=d.data.map(r=>{const n=/^[0-9]{1,10}$/.test(r.cik)?link(r.name,'/institutional-investor/manager/'+r.cik):r.name;
+  return [n,num(r.shares),r.ownershipPct==null?'-':r.ownershipPct.toFixed(2)+'%',(r.shareChange>0?'+':'')+num(r.shareChange)]});
+ const more=link('All '+s.filerCount.toLocaleString()+' investors →','/stock/'+T+'/investors');more.style.display='inline-block';more.style.marginTop='.5rem';
+ b.replaceChildren(head,table(['Investor','Shares','Owns','Change'],rows,[1,2,3]),more)}catch(e){fail(b,e)}})();
+(async()=>{const b=$('ins');try{const d=await api('/api/insider-trades/'+T);if(!d.trades.length)return none(b,'No open-market insider trades in '+d.quarter);
+ const rows=d.trades.slice(0,10).map(r=>[fdate(r.date),r.owner,r.role,el('span',r.side.toUpperCase(),cls(r.side==='buy'?1:-1)),num(r.shares),'$'+px(r.price),money(r.value)]);
+ b.replaceChildren(table(['Date','Insider','Role','Side','Shares','Price','Value'],rows,[4,5,6]),el('div','SEC Form 4 data set, '+d.quarter+'. Open-market trades only.','mut sm'))}catch(e){fail(b,e)}})();
+(async()=>{const b=$('pol');try{const d=await api('/api/political-trades?ticker='+T+'&days=365&limit=10');if(!d.latest.length)return none(b,'No House member trades in the last year');
+ const rows=d.latest.map(r=>[fdate(r.date),link(r.member,'/political-trades?member='+encodeURIComponent(r.member)),r.type,r.amount_high?money(r.amount_low)+' – '+money(r.amount_high):'Over '+money(r.amount_low)]);
+ b.replaceChildren(table(['Traded','Member','Type','Amount'],rows,[]))}catch(e){fail(b,e)}})();
+(async()=>{const b=$('dark');try{const d=await api('/api/dark-pool/'+T);if(!d.venues.length)return none(b,'No ATS volume reported for the week of '+fdate(d.week));
+ const rows=d.venues.slice(0,8).map(v=>[v.name,num(v.shares),v.share_pct.toFixed(1)+'%']);
+ b.replaceChildren(el('div','Week of '+fdate(d.week)+' (FINRA, ~3 weeks delayed)','mut sm'),table(['Venue','Shares','Share'],rows,[1,2]))}catch(e){fail(b,e)}})();
+(async()=>{const b=$('shv');try{const x=await api('/api/short-volume/'+T);if(!x)return none(b,'No data for '+T);
+ b.replaceChildren(kv([['Date',x.date],['Short ratio',x.short_ratio==null?'-':(x.short_ratio*100).toFixed(1)+'%'],['Short volume',num(x.short_volume)],['Total volume',num(x.total_volume)]]),
+  el('div','Share of daily volume that was short sales (not short interest).','mut sm'))}catch(e){fail(b,e)}})();
+"""
+
+
+def render_stock(ticker):
+    import re
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", ticker):
+        raise ValueError("bad ticker")
+    return shell(f"{ticker} stock", "dash", _STOCK_BODY.replace("__T__", ticker), _STOCK_JS.replace("__T__", ticker),
+                 _MANAGER_CSS + _SM_CSS + _LIST_CSS + _STOCK_CSS)

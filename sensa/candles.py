@@ -18,12 +18,20 @@ def _day_strings(ts):
     return [str(t)[:10] for t in ts.astype("datetime64[D]")]
 
 
-def make_candles_fn(data_dir, daily=None, intraday=get_candles, secret=""):
+def make_candles_fn(data_dir, daily=None, intraday=get_candles, secret="", yahoo=None):
     def candles(symbol, tf):
         try:
             return intraday(symbol, tf, data_dir)
         except DataUnavailable as cache_err:
+            yahoo_err = None
+            if yahoo is not None:                       # no key, no daily quota: all timeframes
+                try:
+                    return yahoo.candles(symbol.upper(), tf)
+                except DataUnavailable as e:
+                    yahoo_err = e
             if tf != "1day":
+                if yahoo_err is not None:
+                    raise DataUnavailable(f"{yahoo_err} (no local intraday cache either)") from None
                 raise DataUnavailable(
                     f"{cache_err}. Intraday timeframes need the local cache "
                     "(Alpha Vantage intraday is a premium endpoint); try 1day.") from None

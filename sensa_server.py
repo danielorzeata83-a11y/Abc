@@ -24,12 +24,13 @@ from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_post, yahoo_news
 from sensa.thirteenf import Figi, ThirteenF
 from sensa.watch import Watcher
+from sensa.yahoo_chart import YahooChart
 from sensa.darkpool import DarkPool
 from sensa.insiders import InsiderService
 from sensa.investors import InvestorService, UnknownTicker
 from sensa.managers import browse
 from sensa.politicians import PoliticiansService
-from sensa.ui import (BASE_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_latest_filings,
+from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_stock, render_latest_filings,
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -67,7 +68,7 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 .err{color:var(--dn);font-size:.85rem}footer{color:var(--mut);font-size:.75rem;padding:0 1rem 1rem}
 @media(max-width:480px){main{padding:.6rem;gap:.6rem}}
 </style></head><body>
-__NAV__<div class="bar"><span class="mut">symbol</span> <select id="sym">__OPTIONS__</select></div>
+__NAV__<div class="bar"><span class="mut">symbol</span> <select id="sym">__OPTIONS__</select> <a id="open" href="#">Open stock page →</a></div>
 <main>
 <section class="card wide"><h3>Chart</h3><div id="tfs"></div><div id="chart" style="height:340px;margin-top:.5rem"></div><div id="chartmsg"></div></section>
 <section class="card"><h3>Top gainers</h3><div id="gain"></div></section>
@@ -81,6 +82,7 @@ __NAV__<div class="bar"><span class="mut">symbol</span> <select id="sym">__OPTIO
 <section class="card"><h3>Market news</h3><div id="news"></div></section>
 </main><footer>__DISCLAIMER__ Data: Cboe delayed quotes (~15 min), FRED, Yahoo Finance RSS, SEC EDGAR, FINRA. Charts: TradingView Lightweight Charts™ (Apache-2.0).</footer>
 <script src="/static/lightweight-charts.js"></script>
+<script>__LINKJS__</script>
 <script>
 const $=id=>document.getElementById(id);
 const el=(t,txt,cls)=>{const e=document.createElement(t);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e};
@@ -88,7 +90,7 @@ const safeUrl=u=>/^https?:\\/\\//i.test(u)?u:null;
 async function api(p){const r=await fetch(p);const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
 function fail(box,e){box.replaceChildren(el('div',String(e.message||e),'err'))}
 function rows(box,list){const t=el('table');for(const r of list){const tr=el('tr');
- tr.append(el('td',r.symbol),el('td',r.price.toFixed(2),'mut'),
+ const sc=el('td');sc.append(tkLink(r.symbol));tr.append(sc,el('td',r.price.toFixed(2),'mut'),
  el('td',(r.change_pct>0?'+':'')+r.change_pct+'%',r.change_pct>0?'up':'dn'));t.append(tr)}
  box.replaceChildren(list.length?t:el('span','no data','mut'))}
 let chart,candleS,volS,tf='1day';
@@ -149,14 +151,15 @@ async function insiders(s){const b=$('ins');try{const r=await api('/api/insiders
 async function news(){const b=$('news');try{const n=await api('/api/news'),u=el('ul');
  for(const x of n){const li=el('li'),h=safeUrl(x.url),a=el('a',x.headline);if(h){a.href=h;a.target='_blank';a.rel='noopener noreferrer'}
   li.append(a,el('span',' '+(x.source||''),'mut'));u.append(li)}b.replaceChildren(u)}catch(e){fail(b,e)}}
-$('sym').onchange=e=>{analyst(e.target.value);opts(e.target.value);insiders(e.target.value);shortvol(e.target.value);bars(e.target.value)};
+const syncOpen=()=>{$('open').href='/stock/'+encodeURIComponent($('sym').value)};syncOpen();
+$('sym').onchange=e=>{syncOpen();analyst(e.target.value);opts(e.target.value);insiders(e.target.value);shortvol(e.target.value);bars(e.target.value)};
 movers();sectors();news();curve();analyst($('sym').value);opts($('sym').value);insiders($('sym').value);shortvol($('sym').value);bars($('sym').value);
 setInterval(()=>{movers();sectors()},60000);
 </script></body></html>"""
 
 
 def render_index(watchlist):
-    page = _PAGE.replace("__BASECSS__", BASE_CSS).replace("__NAV__", nav("dash"))
+    page = _PAGE.replace("__BASECSS__", BASE_CSS + NAV_CSS).replace("__NAV__", nav("dash")).replace("__LINKJS__", LINK_JS)
     opts = "".join(f'<option value="{s}">{s}</option>' for s in watchlist)
     return (page.replace("__OPTIONS__", opts)
                  .replace("__DISCLAIMER__", DISCLAIMER))
@@ -273,6 +276,12 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._json(400, {"error": "bad parameters"})
                 except DataUnavailable as e:
                     self._json(503, {"error": str(e)})
+                return
+            if len(parts) == 2 and parts[0] == "stock":
+                if not _SYM.match(parts[1].upper()):
+                    self._send(404, "not found", "text/plain")
+                else:
+                    self._send(200, render_stock(parts[1].upper()), "text/html; charset=utf-8")
                 return
             if len(parts) == 3 and parts[0] == "stock" and parts[2] == "investors":
                 if not _SYM.match(parts[1].upper()):
@@ -429,6 +438,10 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     payload = hub.movers(syms)
                 elif route == "analyst" and arg:
                     payload = hub.analyst(arg)
+                elif route == "quote" and arg:
+                    payload = hub.quote(arg)
+                elif route == "company" and arg:
+                    payload = hub.company(arg)
                 elif route == "options" and arg:
                     payload = hub.options(arg)
                 elif route == "short-volume" and arg:
@@ -533,10 +546,19 @@ def build_hub():
     fred = FredApi(os.environ.get("FRED_API_KEY", "").strip())
     sec = os.environ.get("SEC_CONTACT", "").strip()
     figi = Figi(post=lambda url, payload: http_post(url, payload))
+    company_fn = None
+    if sec:
+        from sensa.company import CompanyInfo
+        from sensa.shares_out import SharesOutstanding
+        ua = {"User-Agent": f"Abc-dashboard-research/1.0 {sec}"}
+        sec_get = lambda url: http_fetch(url, ua)
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f")
+        company_fn = CompanyInfo(sec_get, SharesOutstanding(sec_get, os.path.join(cache_dir, "shares_out.json"))).get
     return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
                edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch),
-               candles_fn=make_candles_fn(data_dir, AlphaVantageDailyProvider(av) if av else None, secret=av),
-               thirteenf=ThirteenF(sec, http_fetch) if sec else None, figi=figi,
+               candles_fn=make_candles_fn(data_dir, AlphaVantageDailyProvider(av) if av else None, secret=av,
+                                          yahoo=YahooChart(http_fetch)),
+               thirteenf=ThirteenF(sec, http_fetch) if sec else None, figi=figi, company_fn=company_fn,
                cache_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f"))
 
 

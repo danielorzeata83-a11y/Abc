@@ -22,8 +22,18 @@ QUOTE = {"data": {"symbol": "AAPL", "current_price": 347.61, "prev_day_close": 3
 def test_cboe_quote_maps_fields_and_uppercases():
     f = FakeFetch(QUOTE)
     q = Cboe(fetch=f).quote("aapl")
-    assert q == {"price": 347.61, "prev_close": 347.73, "change_pct": -0.1424, "iv30": 26.5}
+    assert q == {"price": 347.61, "prev_close": 347.73, "change_pct": -0.1424, "iv30": 26.5,
+                 "open": None, "high": None, "low": None, "volume": None, "bid": None, "ask": None, "change": None,
+                 "iv30_change": None, "last_trade_time": None}
     assert f.calls[0][0].endswith("/delayed_quotes/quotes/AAPL.json")
+
+
+def test_cboe_quote_also_carries_the_day_range_volume_and_book():
+    d = {"data": {**QUOTE["data"], "open": 346.0, "high": 349.1, "low": 345.5, "volume": 1234, "bid": 347.6, "ask": 347.7,
+                  "price_change": -0.12, "iv30_change": 0.5, "last_trade_time": "2026-10-23T15:59:59"}}
+    q = Cboe(fetch=FakeFetch(d)).quote("aapl")
+    assert (q["open"], q["high"], q["low"], q["volume"], q["bid"], q["ask"], q["change"], q["iv30_change"], q["last_trade_time"]) == \
+        (346.0, 349.1, 345.5, 1234, 347.6, 347.7, -0.12, 0.5, "2026-10-23T15:59:59")
 
 
 def test_cboe_index_symbols_get_underscore_prefix():

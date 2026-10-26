@@ -404,3 +404,24 @@ def test_unknown_accession_is_reported_not_guessed():
     import pytest as _p
     with _p.raises(DataUnavailable, match="not found"):
         mgr_hub().filing("999999999999999999")
+
+
+def test_quote_returns_the_full_quote_and_shares_the_cache_with_movers():
+    cb = FakeCboe()
+    hub = make(cboe=cb)
+    hub.movers(["AAA"])
+    assert hub.quote("aaa")["price"] == 110.0 and cb.quote_calls == 1
+
+
+def test_quote_of_an_unknown_symbol_raises_data_unavailable():
+    class NoQuote(FakeCboe):
+        def quote(self, sym):
+            raise DataUnavailable("no such symbol")
+    with pytest.raises(DataUnavailable):
+        make(cboe=NoQuote()).quote("ZZZ")
+
+
+def test_company_comes_from_the_injected_source_or_is_none():
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, company_fn=lambda t: {"ticker": t, "name": "X"})
+    assert hub.company("aaa") == {"ticker": "AAA", "name": "X"}
+    assert make().company("AAA") is None

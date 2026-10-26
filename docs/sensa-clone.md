@@ -89,6 +89,18 @@ rapoartele noi (`13F-HR`) pentru trimestrul următor:
 - **Când vine arhiva SEC:** datele live pentru trimestrul acoperit sunt șterse automat, iar vederea completă preia.
 - **Stare:** `GET /api/live/status` arată starea și câte rapoarte au fost citite.
 
+## Pagina unei acțiuni (`/stock/<TICKER>`) și legăturile dintre pagini
+Orice ticker din aplicație (Smart Money, fonduri, alerte, insideri, dark pool, politicieni, dashboard) e un link către
+`/stock/<TICKER>`; căsuța din bara de sus deschide direct orice ticker. Pagina adună, fiecare secțiune independent:
+- **Cotație** (Cboe, ~15 min întârziere): preț, variație, minim/maxim, volum, bid/ask, IV 30 zile; **companie** (SEC: nume,
+  bursă, industrie, acțiuni în circulație → capitalizare unde numărul e clar).
+- **Grafic** (Yahoo Finance, fără cheie și fără cotă zilnică; prioritar față de Alpha Vantage, care rămâne rezervă pentru 1day).
+- **Opțiuni** (GEX, put/call, expirare), **analiști** (Finnhub), **știri** (Yahoo RSS), **short volume** (FINRA).
+- **Instituții**: primii 8 deținători + „All investors →" (`/stock/<T>/investors`); numele fondurilor duc la pagina fondului.
+- **Insideri** (Form 4), **dark pool** (ATS), **politicieni** (House); numele membrilor duc la `/political-trades?member=...`.
+- API nou: `/api/quote/<T>`, `/api/company/<T>`. Prima vizită la o acțiune poate dura ~30-60 s (potrivirea ticker → CUSIP prin OpenFIGI,
+  apoi rămâne în cache).
+
 ## Paginile instituționale (după structura originalului)
 - `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
 - `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru

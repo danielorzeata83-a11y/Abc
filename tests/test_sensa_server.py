@@ -124,11 +124,13 @@ def test_page_inline_script_is_syntactically_valid_javascript(tmp_path):
     if not node:
         import pytest
         pytest.skip("node not installed")
-    script = re.search(r"<script>(.*)</script>", srv.render_index(["AAA"]), re.S).group(1)
-    f = tmp_path / "page.js"
-    f.write_text(script)
-    r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
+    scripts = re.findall(r"<script>(.*?)</script>", srv.render_index(["AAA"]), re.S)
+    assert len(scripts) >= 2
+    for n, script in enumerate(scripts):
+        f = tmp_path / f"page{n}.js"
+        f.write_text(script)
+        r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
 
 
 def test_client_disconnect_while_writing_is_ignored_not_raised():
@@ -237,7 +239,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
              srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
-             srv.render_political(), srv.render_investors("PEBO")]
+             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO")]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -721,7 +723,7 @@ def test_investors_page_is_served_for_a_valid_ticker_only():
 
 
 def test_most_held_tickers_and_the_institutional_landing_lead_to_the_investors_page():
-    assert "'/stock/'+" in srv.render_smart_money() and "/investors" in srv.render_smart_money()
+    assert srv.render_smart_money().count("tkLink(") >= 3
     html = srv.render_institutional()
     assert 'id="tkf"' in html and "/investors" in html
 
@@ -776,3 +778,57 @@ def test_overview_endpoint_serves_the_live_view_on_request():
 def test_smart_money_page_can_switch_to_the_live_quarter():
     html = srv.render_smart_money()
     assert "view=live" in html and 'id="views"' in html
+
+
+class StockHub(FakeHub):
+    def quote(self, s):
+        if s == "ZZZ":
+            raise DataUnavailable("no such symbol")
+        return {"price": 12.55, "change": 0.1}
+
+    def company(self, s):
+        return {"ticker": s, "name": "Bluerock"} if s != "NONE" else None
+
+
+def test_quote_and_company_endpoints_and_the_stock_page():
+    def go(path):
+        server = srv.make_server(StockHub(), "127.0.0.1", 0, ["AAA"])
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+            c.request("GET", path)
+            r = c.getresponse()
+            return r.status, r.read()
+        finally:
+            server.shutdown()
+    assert json.loads(go("/api/quote/bpre")[1])["price"] == 12.55
+    assert go("/api/quote/ZZZ")[0] == 503
+    assert json.loads(go("/api/company/BPRE")[1])["name"] == "Bluerock"
+    assert go("/api/company/NONE")[0] == 200 and go("/api/company/NONE")[1].strip() == b"null"
+    st, body = go("/stock/bpre")
+    assert st == 200 and b"BPRE" in body and b"/api/quote/" in body
+    assert go("/stock/bad%3Cx")[0] == 404
+
+
+def test_tickers_link_to_the_stock_page_on_every_page_and_the_nav_has_a_ticker_search():
+    pages = {"filing": srv.render_filing("000000000126000007"), "manager": srv.render_manager("0001609098"),
+             "smart": srv.render_smart_money(), "alerts": srv.render_alerts(), "insiders": srv.render_insiders(),
+             "dark": srv.render_dark_pool(), "political": srv.render_political(), "investors": srv.render_investors("PEBO")}
+    for name, html in pages.items():
+        assert "function tkLink" in html, name
+        assert 'id="gs"' in html, name                      # global ticker search in the nav
+    for name in ("filing", "manager", "smart", "alerts", "insiders", "dark", "political"):
+        assert pages[name].count("tkLink(") >= 2, name                  # defined and used
+        assert pages[name].index("function tkLink") < pages[name].index("tkLink(", pages[name].index("function tkLink") + 20), name
+
+
+def test_dashboard_symbols_and_the_selected_stock_link_to_the_stock_page():
+    html = srv.render_index(["AAA", "BBB"])
+    assert "function tkLink" in html and 'id="gs"' in html
+    assert "tkLink(r.symbol)" in html and 'id="open"' in html
+
+
+def test_stock_page_explains_missing_options_and_analyst_data_instead_of_showing_raw_errors():
+    html = srv.render_stock("BPRE")
+    assert "No options data for this symbol" in html and "No analyst coverage" in html
+    assert "minmax(380px,1fr)" in html

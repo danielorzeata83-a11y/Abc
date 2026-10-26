@@ -55,3 +55,35 @@ def test_provider_errors_never_leak_the_api_key():
     with pytest.raises(DataUnavailable) as e:
         make_candles_fn("d", daily=Leaky(), intraday=no_cache, secret="SECRETKEY")("AAPL", "1day")
     assert "SECRETKEY" not in str(e.value)
+
+
+class FakeYahoo:
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    def candles(self, symbol, tf):
+        self.calls.append((symbol, tf))
+        if self.fail:
+            raise DataUnavailable("yahoo down")
+        return [{"time": 1, "src": "yahoo"}]
+
+
+def test_yahoo_serves_every_timeframe_when_there_is_no_local_cache_and_spares_the_alpha_vantage_quota():
+    d, y = FakeDaily(), FakeYahoo()
+    fn = make_candles_fn("d", daily=d, intraday=no_cache, yahoo=y)
+    assert fn("aapl", "1h") == [{"time": 1, "src": "yahoo"}] and fn("AAPL", "1day") == [{"time": 1, "src": "yahoo"}]
+    assert d.calls == [] and y.calls == [("AAPL", "1h"), ("AAPL", "1day")]
+
+
+def test_the_local_cache_still_wins_over_yahoo():
+    y = FakeYahoo()
+    fn = make_candles_fn("d", intraday=lambda s, tf, d: [{"time": 9, "src": "cache"}], yahoo=y)
+    assert fn("AAPL", "1h")[0]["src"] == "cache" and y.calls == []
+
+
+def test_when_yahoo_fails_daily_falls_back_to_alpha_vantage_and_intraday_reports_the_yahoo_error():
+    d = FakeDaily()
+    fn = make_candles_fn("d", daily=d, intraday=no_cache, yahoo=FakeYahoo(fail=True))
+    assert fn("AAPL", "1day")[1]["close"] == 3.0 and d.calls == ["AAPL"]
+    with pytest.raises(DataUnavailable, match="yahoo down"):
+        fn("AAPL", "1h")
