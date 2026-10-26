@@ -106,3 +106,39 @@ def investors_page(db_path, cusip, ticker, shares_out=None, top_ciks=frozenset()
             "quarters": [{"label": x} for x in labels], "data": ordered[start:start + limit],
             "pagination": {"page": page, "limit": limit, "total": len(rows), "totalPages": -(-len(rows) // limit)},
             "sort": {"sortBy": sort_by, "sortOrder": sort_order}}
+
+
+class UnknownTicker(Exception):
+    """The ticker could not be matched to a security that 13F filers hold."""
+
+
+class InvestorService:
+    def __init__(self, data_dir, figi, post, fetch_sec):
+        import os
+        from sensa.shares_out import SharesOutstanding
+        from sensa.tickers import TickerResolver
+        self.data_dir = data_dir
+        self.db = os.path.join(data_dir, "holders.db")
+        self.resolver = TickerResolver(self.db, post, figi, cache_path=os.path.join(data_dir, "tickers.json"))
+        self.shares_out = SharesOutstanding(fetch_sec, os.path.join(data_dir, "shares_out.json"))
+
+    def _top_ciks(self):
+        from markov.data_providers import DataUnavailable
+        from sensa.universe import load_overview
+        try:
+            return {f["cik"] for f in load_overview(self.data_dir)["funds"]}
+        except (DataUnavailable, KeyError):
+            return set()
+
+    def lookup(self, ticker, **paging):
+        from markov.data_providers import DataUnavailable
+        t = (ticker or "").strip().upper()
+        meta(self.db)                                     # no index yet -> "press Update"
+        cusip = self.resolver.cusip(t)
+        if cusip is None:
+            raise UnknownTicker(f"No 13F holders found for {t or 'that ticker'}")
+        try:
+            out = self.shares_out.get(t)
+        except (DataUnavailable, KeyError, ValueError):
+            out = None
+        return investors_page(self.db, cusip, t, shares_out=out, top_ciks=self._top_ciks(), **paging)

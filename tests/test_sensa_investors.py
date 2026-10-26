@@ -92,3 +92,48 @@ def test_top_funds_and_prime_brokers_are_flagged(db):
 def test_unknown_security_gives_an_empty_page(db):
     res = investors_page(db, "999999999", "NONE", shares_out=None)
     assert res["data"] == [] and res["summary"]["filerCount"] == 0 and res["pagination"]["total"] == 0
+
+
+import json as _json
+
+from markov.data_providers import DataUnavailable
+from sensa.investors import InvestorService, UnknownTicker
+from sensa.thirteenf import Figi
+from tests.test_sensa_tickers import FakeOpenFigi
+
+
+def service(tmp_path, fetch=None):
+    post = FakeOpenFigi()
+    FakeOpenFigi.TICKERS["PEBO"] = "PEOPLES BANCORP INC/OH"
+
+    def sec(url, headers=None):
+        if "company_tickers" in url:
+            return _json.dumps({"0": {"cik_str": 5, "ticker": "PEBO", "title": "x"}})
+        return _json.dumps({"units": {"shares": [{"end": "2026-06-30", "val": 1000, "filed": "2026-08-01"}]}})
+    return InvestorService(str(tmp_path), Figi(post), post, fetch or sec)
+
+
+def test_service_resolves_the_ticker_and_adds_ownership_and_top_fund_flags(db, tmp_path):
+    (tmp_path / "overview.json").write_text(_json.dumps({"funds": [{"cik": "0000000002"}]}))
+    res = service(tmp_path).lookup("pebo")
+    assert res["summary"]["filerCount"] == 3 and res["summary"]["topFundCount"] == 1
+    assert rows(res)["0000000002"]["ownershipPct"] == 4.0 and res["summary"]["ticker"] == "PEBO"
+
+
+def test_service_survives_a_failing_share_count_source(db, tmp_path):
+    def down(url, headers=None):
+        raise DataUnavailable("sec down")
+    res = service(tmp_path, down).lookup("PEBO")
+    assert res["summary"]["sharesOutstanding"] is None and res["summary"]["filerCount"] == 3
+
+
+def test_service_reports_an_unmatched_ticker_and_passes_paging_through(db, tmp_path):
+    s = service(tmp_path)
+    with pytest.raises(UnknownTicker, match="ZZZZ"):
+        s.lookup("ZZZZ")
+    assert len(s.lookup("PEBO", page=1, limit=1, sort_by="shares", sort_order="asc")["data"]) == 1
+
+
+def test_service_without_an_index_says_to_press_update(tmp_path):
+    with pytest.raises(DataUnavailable, match="Update"):
+        service(tmp_path).lookup("PEBO")
