@@ -76,6 +76,14 @@ planificate 10b5-1, căutare după ticker, plus ultimele filing-uri din EDGAR (l
 - Aceeași tranzacție raportată de mai mulți declaranți (declarare comună) se numără o dată; numele se unesc.
 - Limită: SEC publică setul trimestrial, deci ultimul trimestru complet e Q3 2026 (până la 30 sept.); octombrie apare doar în feed-ul live.
 
+## Dark pool (`/dark-pool`)
+Volum **săptămânal** pe platformele ATS (dark pool) din **FINRA OTC Transparency** (gratuit, fără cheie): cele mai tranzacționate acțiuni
+cu variația față de săptămâna anterioară și dimensiunea medie a unei tranzacții, istoric pe 12 săptămâni, cele mai mari platforme, și
+defalcarea pe platforme pentru un ticker.
+- Ce NU este: prints individuale (acelea sunt date plătite). Este volum agregat, publicat cu ~3 săptămâni întârziere.
+- Doar **NMS Tier 1** în totaluri și istoric: FINRA publică Tier 2 cu ~2 săptămâni mai târziu, iar amestecul ar face ultimele
+  săptămâni să pară o prăbușire (am prins asta pe date reale).
+
 ## Alerte Smart Money (`/smart-money/alerts`)
 Urmărești fonduri după CIK (buton **Follow** pe profilul fondului sau pe pagina de alerte). Când un fond depune un
 13F nou, aplicația compară cu trimestrul anterior și creează un **semnal**: poziții noi, ieșite, crescute, reduse

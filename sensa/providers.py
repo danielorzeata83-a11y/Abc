@@ -38,10 +38,10 @@ def http_fetch(url, headers=None):
         raise DataUnavailable(f"fetch failed ({type(e).__name__}) for {url.split('?')[0]}") from e
 
 
-def http_post(url, payload):
-    """POST a JSON payload, return the response text; failures -> DataUnavailable."""
+def http_post(url, payload, headers=None):
+    """POST a JSON payload, return the response text ('' for an empty 204); failures -> DataUnavailable."""
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
-                                 headers=with_user_agent({"Content-Type": "application/json"}))
+                                 headers=with_user_agent({"Content-Type": "application/json", **(headers or {})}))
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return r.read().decode("utf-8")

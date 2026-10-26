@@ -29,7 +29,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 """
 
 NAV_ITEMS = (("dash", "/", "Dashboard"), ("smart", "/smart-money", "Smart Money"),
-             ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"),
+             ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"),
              ("alerts", "/smart-money/alerts", "Alerts"))
 
 
@@ -610,3 +610,60 @@ load();poll();live();
 
 def render_insiders():
     return shell("Insider trading", "insider", _INS_BODY, _COMMON_JS + _INS_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)
+
+
+# ------------------------------------------------------------------ dark pool (FINRA ATS weekly)
+_DARK_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Dark pool</h1>
+ <p class="mut">Trading done on alternative trading systems (ATS, often called dark pools) instead of public exchanges.
+ Source: FINRA OTC Transparency, <b>weekly</b> totals per stock and per venue, published about three weeks late. It is aggregate volume, not individual prints.</p>
+ <div id="msg" class="err"></div>
+ <div class="stats" id="stats"></div>
+ <div class="grid" style="margin-top:1rem">
+  <div class="col">
+   <section class="card"><div class="head"><h3>Most traded stocks on ATS venues</h3><span class="head"><input class="q" id="sq" placeholder="Ticker, Enter" style="min-width:120px"></span></div>
+    <div id="sym"></div><div class="tbl"><table class="t"><thead><tr><th>#</th><th>Ticker</th><th>Company</th><th class="n">Shares</th><th class="n">Trades</th><th class="n">Avg trade</th><th class="n">vs prior week</th></tr></thead><tbody id="rows"><tr><td class="mut" colspan="7">Loading…</td></tr></tbody></table></div></section>
+  </div>
+  <div class="col">
+   <section class="card"><h3>ATS volume by week</h3><div id="hist"></div></section>
+   <section class="card"><h3>Largest ATS venues</h3><div id="venues"></div></section>
+  </div>
+ </div>
+ <p class="note" id="note"></p>
+</div>
+"""
+
+_DARK_JS = r"""
+const num=v=>v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(1)+'K':String(Math.round(v));
+const pctc=v=>v==null?'-':(v>0?'+':'')+v.toFixed(1)+'%';
+const cc=v=>v>0?'up':v<0?'dn':'mut';
+function bars(h){const W=320,H=120,m=Math.max(...h.map(x=>x.shares))||1,ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+ svg.setAttribute('viewBox','0 0 '+W+' '+(H+18));svg.setAttribute('width','100%');const bw=W/h.length;
+ h.forEach((x,i)=>{const r=document.createElementNS(ns,'rect'),hh=x.shares/m*H;r.setAttribute('x',i*bw+2);r.setAttribute('y',H-hh);r.setAttribute('width',Math.max(1,bw-4));
+  r.setAttribute('height',hh);r.setAttribute('fill',i===h.length-1?'#1677ff':'#2b4f86');svg.append(r);
+  if(i%3===0||i===h.length-1){const t=document.createElementNS(ns,'text');t.setAttribute('x',i*bw+bw/2);t.setAttribute('y',H+13);t.setAttribute('text-anchor','middle');t.textContent=x.week.slice(5);svg.append(t)}});
+ return svg}
+async function showSym(v){const b=$('sym');b.replaceChildren(el('span','Loading '+v+'…','mut'));
+ try{const d=await api('/api/dark-pool/'+encodeURIComponent(v));b.replaceChildren();
+  const c=el('div',null,'card');c.style.margin='.4rem 0 1rem';c.append(el('b',d.symbol+' · week of '+fdate(d.week)));
+  if(!d.venues.length)c.append(el('div','No ATS volume reported for this ticker that week','mut'));
+  for(const x of d.venues.slice(0,12)){const r=el('div',null,'alloc-row');r.append(el('span',x.name,'nm'),el('span',num(x.shares)+' sh','w'),el('span',x.share_pct.toFixed(1)+'%','w'));c.append(r)}
+  b.append(c)}catch(e){b.replaceChildren(el('span',e.message,'err'))}}
+$('sq').onkeydown=e=>{if(e.key==='Enter'){const v=e.target.value.trim().toUpperCase();if(/^[A-Z][A-Z0-9.\-]{0,9}$/.test(v))showSym(v)}};
+(async()=>{try{const d=await api('/api/dark-pool?top=50');
+ $('stats').replaceChildren(stat('Week of',fdate(d.week),'latest published by FINRA'),stat('ATS shares',d.total_shares==null?'-':num(d.total_shares),pctc(d.total_change_pct)+' vs prior week'),
+  stat('ATS trades',d.total_trades==null?'-':num(d.total_trades),'all venues'),stat('Venues',String(d.venues.length)+'+','reporting that week'));
+ const tb=$('rows');tb.replaceChildren();
+ d.top.forEach((r,i)=>{const tr=el('tr'),t=el('td'),a=el('a',r.symbol);a.href='#';a.onclick=e=>{e.preventDefault();$('sq').value=r.symbol;showSym(r.symbol)};t.append(a);
+  const ch=el('td',pctc(r.change_pct),'n '+cc(r.change_pct));
+  tr.append(el('td',String(i+1)),t,el('td',r.name),el('td',num(r.shares),'n'),el('td',num(r.trades),'n'),el('td',r.avg_trade==null?'-':Math.round(r.avg_trade).toLocaleString()+' sh','n'),ch);tb.append(tr)});
+ $('hist').replaceChildren(bars(d.history),el('div','Weekly shares traded on ATS venues, last '+d.history.length+' weeks','note'));
+ const vb=$('venues');vb.replaceChildren();for(const v of d.venues){const r=el('div',null,'alloc-row');r.append(el('span',v.name,'nm'),el('span',num(v.shares),'w'),el('span',v.share_pct.toFixed(1)+'%','w'));vb.append(r)}
+ $('note').textContent=d.tier_note+' Share counts are as reported by each ATS; FINRA may revise earlier weeks.'}
+ catch(e){$('rows').replaceChildren();$('msg').textContent=e.message}})();
+"""
+
+
+def render_dark_pool():
+    return shell("Dark pool", "dark", _DARK_BODY, _COMMON_JS + _DARK_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)

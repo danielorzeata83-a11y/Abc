@@ -149,3 +149,26 @@ def test_http_post_sends_json_with_user_agent_and_maps_failures(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     with pytest.raises(DataUnavailable):
         providers.http_post("https://x.test/y?secret=1", [])
+
+
+def test_http_post_accepts_extra_headers_and_treats_an_empty_204_body_as_empty_text(monkeypatch):
+    import io
+    import urllib.request
+    from sensa import providers
+    seen = {}
+
+    class Resp(io.BytesIO):
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        seen["accept"] = req.get_header("Accept")
+        return Resp(b"")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert providers.http_post("https://x.test/y", {}, {"Accept": "application/json"}) == ""
+    assert seen["accept"] == "application/json"

@@ -236,7 +236,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
         pytest.skip("node not installed")
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
-             srv.render_filing("000000000126000007"), srv.render_insiders()]
+             srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -563,3 +563,42 @@ def test_insider_endpoints_503_when_not_configured_or_not_built():
             raise DataUnavailable("No insider data yet. Press Update")
     st, body, _ = _ins("GET", "/api/insider-trades", insiders=Empty())
     assert st == 503 and "Press Update" in json.loads(body)["error"]
+
+
+class FakeDark:
+    def overview(self, top=50):
+        return {"week": "2026-10-05", "prev_week": "2026-09-28", "top": [], "venues": [], "history": [], "lim": top}
+
+    def symbol(self, sym):
+        if sym.upper() == "NONE":
+            raise DataUnavailable("FINRA is unreachable")
+        return {"symbol": sym.upper(), "week": "2026-10-05", "venues": []}
+
+
+def _dark(path, dark="default"):
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], darkpool=FakeDark() if dark == "default" else dark)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", path)
+        r = c.getresponse()
+        return r.status, r.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_dark_pool_page_and_api():
+    st, body = _dark("/dark-pool")
+    assert st == 200 and b"Dark pool" in body and b"weekly" in body
+    st, body = _dark("/api/dark-pool?top=999")
+    assert st == 200 and json.loads(body)["lim"] <= 200
+    assert json.loads(_dark("/api/dark-pool/nvda")[1])["symbol"] == "NVDA"
+    assert _dark("/api/dark-pool/bad%24")[0] == 400
+    assert _dark("/api/dark-pool?top=abc")[0] == 400
+    st, body = _dark("/api/dark-pool/none")
+    assert st == 503 and "FINRA" in json.loads(body)["error"]
+
+
+def test_dark_pool_is_503_when_not_configured():
+    assert _dark("/api/dark-pool", dark=None)[0] == 503

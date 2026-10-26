@@ -24,9 +24,10 @@ from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_post, yahoo_news
 from sensa.thirteenf import Figi, ThirteenF
 from sensa.watch import Watcher
+from sensa.darkpool import DarkPool
 from sensa.insiders import InsiderService
 from sensa.managers import browse
-from sensa.ui import (BASE_CSS, nav, render_alerts, render_filing, render_insiders, render_institutional, render_latest_filings,
+from sensa.ui import (BASE_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_latest_filings,
                       render_manager, render_managers, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -172,7 +173,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -236,6 +237,27 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None):
                 return
             if len(parts) == 2 and parts[0] == "institutional-investor" and _ACC18.match(parts[1]):
                 self._send(200, render_filing(parts[1]), "text/html; charset=utf-8")
+                return
+            if u.path.rstrip("/") == "/dark-pool":
+                self._send(200, render_dark_pool(), "text/html; charset=utf-8")
+                return
+            if parts[:2] == ["api", "dark-pool"] and len(parts) <= 3:
+                if darkpool is None:
+                    self._json(503, {"error": "dark pool data is not configured"})
+                    return
+                try:
+                    if len(parts) == 3:
+                        if not _SYM.match(parts[2].upper()):
+                            self._json(400, {"error": "bad symbol"})
+                            return
+                        self._json(200, darkpool.symbol(parts[2]))
+                    else:
+                        top = min(200, max(1, int((parse_qs(u.query).get("top") or ["50"])[0])))
+                        self._json(200, darkpool.overview(top))
+                except ValueError:
+                    self._json(400, {"error": "bad parameters"})
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
                 return
             if u.path.rstrip("/") == "/inside-trade":
                 self._send(200, render_insiders(), "text/html; charset=utf-8")
@@ -420,8 +442,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None):
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool))
 
 
 def build_hub():
@@ -520,7 +542,8 @@ def main():
     if smart is not None:
         hub.accession_lookup = smart.lookup_accession
     insiders = build_insiders(os.environ.get("SEC_CONTACT", "").strip())
-    srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders)
+    srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders,
+                      darkpool=DarkPool(http_post))
     if insiders is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()
