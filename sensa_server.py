@@ -1,10 +1,10 @@
 """Own options-dashboard clone (stdlib http.server, zero new deps).
 
-Free data: Finnhub (quotes/news/analysts), Tradier sandbox (options chain +
-greeks, delayed), US Treasury (yield curve, no key). Keys go in env, never in
-URLs or logs. Bind 127.0.0.1; reach remotely via an SSH tunnel.
+Free, keyless data: Cboe delayed quotes (prices + full option chain with
+greeks -> C/P ratio and GEX), FRED (yield curve), Yahoo Finance RSS (news).
+Optional FINNHUB_API_KEY adds analyst consensus. Bind 127.0.0.1; reach
+remotely via an SSH tunnel.
 
-    export FINNHUB_API_KEY=...   TRADIER_TOKEN=...
     python sensa_server.py --watchlist AAPL,MSFT,NVDA,TSLA,AMZN,META,SPY,QQQ
 
 Research / visualisation only -- NOT investment advice.
@@ -14,13 +14,14 @@ import argparse
 import json
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from markov.data_providers import DataUnavailable
 from sensa.hub import Hub
-from sensa.providers import Finnhub, TradierSandbox, TREASURY_URL, http_fetch
+from sensa.providers import (Cboe, Finnhub, FRED_IDS, FRED_URL, YAHOO_RSS, fred_curve,
+                             http_fetch, yahoo_news)
 
 DISCLAIMER = "Research artifact - not investment advice."
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
@@ -54,7 +55,7 @@ a{color:var(--acc);text-decoration:none}li{margin:.35rem 0}ul{padding-left:1rem;
 <section class="card"><h3>Options snapshot</h3><div id="opts"></div></section>
 <section class="card"><h3>Treasury yield curve</h3><div id="yc"></div></section>
 <section class="card"><h3>Market news</h3><div id="news"></div></section>
-</main><footer>__DISCLAIMER__ Data: Finnhub, Tradier sandbox (delayed), US Treasury.</footer>
+</main><footer>__DISCLAIMER__ Data: Cboe delayed quotes (~15 min), FRED, Yahoo Finance RSS.</footer>
 <script>
 const $=id=>document.getElementById(id);
 const el=(t,txt,cls)=>{const e=document.createElement(t);if(txt!=null)e.textContent=txt;if(cls)e.className=cls;return e};
@@ -67,7 +68,7 @@ function rows(box,list){const t=el('table');for(const r of list){const tr=el('tr
  box.replaceChildren(list.length?t:el('span','no data','mut'))}
 async function movers(){try{const m=await api('/api/movers');rows($('gain'),m.gainers);rows($('lose'),m.losers)}catch(e){fail($('gain'),e);fail($('lose'),e)}}
 async function analyst(s){const b=$('analyst');try{const a=await api('/api/analyst/'+s);
- if(!a){b.textContent='no data';return}
+ if(!a){b.textContent='n/a (set FINNHUB_API_KEY to enable)';return}
  const tot=a.buy+a.hold+a.sell||1,bar=el('div',null,'bar');
  for(const [n,c] of [[a.buy,'var(--up)'],[a.hold,'var(--mut)'],[a.sell,'var(--dn)']]){const d=el('div');d.style.cssText='width:'+n/tot*100+'%;background:'+c;bar.append(d)}
  b.replaceChildren(el('div',a.verdict,a.verdict==='Buy'?'up':a.verdict==='Sell'?'dn':'mut'),bar,
@@ -75,7 +76,10 @@ async function analyst(s){const b=$('analyst');try{const a=await api('/api/analy
 async function opts(s){const b=$('opts');try{const o=await api('/api/options/'+s);
  if(!o){b.textContent='no options';return}
  const c=o.cp,t=el('table');
- for(const [k,v] of [['Expiration',o.expiration],['Call vol',c.call_volume],['Put vol',c.put_volume],
+ const m=x=>(x/1e6).toFixed(1)+'M';
+ for(const [k,v] of [['Expiration',o.expiration+(o.zero_dte?' (0DTE)':'')],['Spot',o.spot],
+  ['Net GEX /1%',m(o.gex.net_gex)],['Call GEX',m(o.gex.call_gex)],['Put GEX',m(o.gex.put_gex)],
+  ['Call vol',c.call_volume],['Put vol',c.put_volume],
   ['C/P volume',c.volume_ratio==null?'-':c.volume_ratio],['C/P open int.',c.oi_ratio==null?'-':c.oi_ratio],['Contracts',o.chain.length]]){
   const tr=el('tr');tr.append(el('td',k,'mut'),el('td',v));t.append(tr)}
  b.replaceChildren(t)}catch(e){fail(b,e)}}
@@ -159,9 +163,16 @@ def make_server(hub, host, port, watchlist):
 
 
 def build_hub():
-    fh = Finnhub(os.environ.get("FINNHUB_API_KEY", "").strip())
-    tr = TradierSandbox(os.environ.get("TRADIER_TOKEN", "").strip())
-    return Hub(fh, tr, lambda: http_fetch(TREASURY_URL.format(year=date.today().year)))
+    key = os.environ.get("FINNHUB_API_KEY", "").strip()
+
+    def curve():
+        since = (date.today() - timedelta(days=21)).isoformat()
+        return fred_curve(http_fetch(FRED_URL.format(ids=FRED_IDS, since=since)))
+
+    def news(symbol):
+        return yahoo_news(http_fetch(YAHOO_RSS.format(sym=symbol or "SPY")))
+
+    return Hub(Cboe(), news, curve, analyst=Finnhub(key) if key else None)
 
 
 def main():

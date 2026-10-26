@@ -53,3 +53,35 @@ def test_cp_ratio_from_volume_and_open_interest():
 def test_cp_ratio_without_puts_has_no_ratio():
     r = cp_ratio([{"option_type": "call", "volume": 5, "open_interest": 5}])
     assert r["volume_ratio"] is None and r["oi_ratio"] is None
+
+
+from sensa.service import gex
+
+
+def test_gex_calls_positive_puts_negative_per_one_percent_move():
+    spot = 100.0
+    chain = [
+        {"option_type": "call", "strike": 100.0, "gamma": 0.05, "open_interest": 10},
+        {"option_type": "put", "strike": 95.0, "gamma": 0.02, "open_interest": 10},
+    ]
+    g = gex(chain, spot)
+    # gamma * OI * 100 shares * spot^2 * 1%
+    assert g["call_gex"] == 0.05 * 10 * 100 * 100 ** 2 * 0.01
+    assert g["put_gex"] == -(0.02 * 10 * 100 * 100 ** 2 * 0.01)
+    assert g["net_gex"] == g["call_gex"] + g["put_gex"]
+    assert [r["strike"] for r in g["by_strike"]] == [95.0, 100.0]
+
+
+def test_gex_ignores_rows_without_gamma_or_open_interest():
+    g = gex([{"option_type": "call", "strike": 1.0, "gamma": None, "open_interest": 5},
+             {"option_type": "put", "strike": 1.0, "gamma": 0.1, "open_interest": 0}], 50.0)
+    assert g["net_gex"] == 0 and g["by_strike"] == []
+
+
+def test_gex_keeps_call_and_put_totals_separate_when_same_strike():
+    chain = [{"option_type": "call", "strike": 100.0, "gamma": 0.05, "open_interest": 10},
+             {"option_type": "put", "strike": 100.0, "gamma": 0.04, "open_interest": 10}]
+    g = gex(chain, 100.0)
+    assert g["call_gex"] > 0 and g["put_gex"] < 0
+    assert round(g["net_gex"], 6) == round(0.01 * 10 * 100 * 100 ** 2 * 0.01, 6)
+    assert len(g["by_strike"]) == 1

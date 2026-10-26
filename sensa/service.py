@@ -45,3 +45,21 @@ def cp_ratio(chain):
     return {"call_volume": tot["call"][0], "put_volume": tot["put"][0],
             "volume_ratio": ratio(tot["call"][0], tot["put"][0]),
             "oi_ratio": ratio(tot["call"][1], tot["put"][1])}
+
+
+def gex(chain, spot):
+    """Dollar gamma exposure per 1% spot move; calls +, puts - (dealer-long-calls
+    convention). by_strike is the net per strike, sorted by strike."""
+    by, call, put = {}, 0.0, 0.0
+    for o in chain:
+        g, oi = o.get("gamma"), o.get("open_interest")
+        if not g or not oi:
+            continue
+        val = g * oi * 100 * spot ** 2 * 0.01
+        if o.get("option_type") == "put":
+            val, put = -val, put - val
+        else:
+            call += val
+        by[o["strike"]] = by.get(o["strike"], 0.0) + val
+    return {"call_gex": call, "put_gex": put, "net_gex": call + put,
+            "by_strike": [{"strike": k, "gex": round(v, 2)} for k, v in sorted(by.items())]}
