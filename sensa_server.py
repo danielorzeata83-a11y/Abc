@@ -126,6 +126,15 @@ def render_index(watchlist):
                  .replace("__DISCLAIMER__", DISCLAIMER))
 
 
+def write_quietly(wfile, data):
+    """A browser that reloads or navigates away aborts its connection mid-response;
+    that is normal, not an error worth a traceback."""
+    try:
+        wfile.write(data)
+    except ConnectionError:      # aborted / reset / broken pipe
+        pass
+
+
 def _make_handler(hub, watchlist):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
@@ -137,7 +146,7 @@ def _make_handler(hub, watchlist):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            write_quietly(self.wfile, data)
 
         def _json(self, code, obj):
             self._send(code, json.dumps(obj), "application/json")

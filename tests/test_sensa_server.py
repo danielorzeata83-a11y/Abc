@@ -129,3 +129,25 @@ def test_page_inline_script_is_syntactically_valid_javascript(tmp_path):
     f.write_text(script)
     r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_client_disconnect_while_writing_is_ignored_not_raised():
+    class Gone:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def write(self, data):
+            raise self.exc
+
+    for exc in (ConnectionAbortedError(), BrokenPipeError(), ConnectionResetError()):
+        srv.write_quietly(Gone(exc), b"x")        # must not raise
+
+
+def test_other_write_errors_still_propagate():
+    class Broken:
+        def write(self, data):
+            raise ValueError("real bug")
+
+    import pytest
+    with pytest.raises(ValueError):
+        srv.write_quietly(Broken(), b"x")
