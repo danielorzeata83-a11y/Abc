@@ -24,8 +24,9 @@ from sensa.hub import Hub
 from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_post, yahoo_news
 from sensa.thirteenf import Figi, ThirteenF
 from sensa.watch import Watcher
+from sensa.insiders import InsiderService
 from sensa.managers import browse
-from sensa.ui import (BASE_CSS, nav, render_alerts, render_filing, render_institutional, render_latest_filings,
+from sensa.ui import (BASE_CSS, nav, render_alerts, render_filing, render_insiders, render_institutional, render_latest_filings,
                       render_manager, render_managers, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -171,7 +172,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -235,6 +236,31 @@ def _make_handler(hub, watchlist, watcher=None, smart=None):
                 return
             if len(parts) == 2 and parts[0] == "institutional-investor" and _ACC18.match(parts[1]):
                 self._send(200, render_filing(parts[1]), "text/html; charset=utf-8")
+                return
+            if u.path.rstrip("/") == "/inside-trade":
+                self._send(200, render_insiders(), "text/html; charset=utf-8")
+                return
+            if parts[:2] == ["api", "insider-trades"] and len(parts) <= 3:
+                if insiders is None:
+                    self._json(503, {"error": "insider data is not configured (set SEC_CONTACT)"})
+                    return
+                try:
+                    if len(parts) == 3 and parts[2] == "status":
+                        self._json(200, insiders.status())
+                    elif len(parts) == 3:
+                        if not _SYM.match(parts[2].upper()):
+                            self._json(400, {"error": "bad symbol"})
+                            return
+                        self._json(200, insiders.symbol(parts[2]))
+                    else:
+                        q = parse_qs(u.query)
+                        days = min(365, max(1, int((q.get("days") or ["30"])[0])))
+                        plans = (q.get("plans") or ["1"])[0] != "0"
+                        self._json(200, insiders.overview(days, plans))
+                except ValueError:
+                    self._json(400, {"error": "bad parameters"})
+                except DataUnavailable as e:
+                    self._json(503, {"error": str(e)})
                 return
             if u.path == "/api/managers":
                 if smart is None:
@@ -361,6 +387,12 @@ def _make_handler(hub, watchlist, watcher=None, smart=None):
                 self._json(400, {"error": "bad json"})
                 return
             route = urlparse(self.path).path
+            if route == "/api/insider-trades/refresh":
+                if insiders is None:
+                    self._json(503, {"error": "insider data is not configured (set SEC_CONTACT)"})
+                else:
+                    self._json(200, {"started": insiders.start(force=bool(body.get("force")))})
+                return
             if route == "/api/smart-money/refresh":
                 if smart is None:
                     self._json(503, {"error": "Smart Money overview is not configured (set SEC_CONTACT)"})
@@ -388,8 +420,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None):
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders))
 
 
 def build_hub():
@@ -436,6 +468,18 @@ def build_smart(contact):
                            notify=telegram_notifier())
 
 
+def build_insiders(contact):
+    """Quarterly SEC insider data set (Form 4 open-market trades)."""
+    if not contact:
+        return None
+    from smart_money_build import make_downloader
+    data_dir = os.environ.get("INSIDERS_DIR", "").strip() or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "data", "insiders")
+    page = "https://www.sec.gov/data-research/sec-markets-data/insider-transactions-data-sets"
+    ua = {"User-Agent": f"Abc-dashboard-research/1.0 {contact}"}
+    return InsiderService(data_dir, lambda: http_fetch(page, ua), make_downloader(contact))
+
+
 def _smart_loop(smart, hours, stop):
     while not stop.wait(hours * 3600):
         smart.start()                    # no-op unless SEC published a newer quarter
@@ -475,7 +519,11 @@ def main():
     smart = build_smart(os.environ.get("SEC_CONTACT", "").strip())
     if smart is not None:
         hub.accession_lookup = smart.lookup_accession
-    srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart)
+    insiders = build_insiders(os.environ.get("SEC_CONTACT", "").strip())
+    srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders)
+    if insiders is not None and a.smart_hours > 0:
+        import threading
+        threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()
     if smart is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(smart, a.smart_hours, threading.Event()), daemon=True).start()

@@ -29,7 +29,8 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 """
 
 NAV_ITEMS = (("dash", "/", "Dashboard"), ("smart", "/smart-money", "Smart Money"),
-             ("inst", "/institutional-investor", "Funds"), ("alerts", "/smart-money/alerts", "Alerts"))
+             ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"),
+             ("alerts", "/smart-money/alerts", "Alerts"))
 
 
 def nav(active):
@@ -432,7 +433,7 @@ const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;
 const money=v=>{if(v==null)return '-';const a=Math.abs(v),s=a>=1e12?'$'+(a/1e12).toFixed(2)+'T':a>=1e9?'$'+(a/1e9).toFixed(2)+'B':a>=1e6?'$'+(a/1e6).toFixed(2)+'M':'$'+Math.round(a).toLocaleString();return (v<0?'-':'')+s};
 const fdate=d=>d?new Date(d+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}):'-';
 const isCik=c=>/^[0-9]{1,10}$/.test(c),isAcc=a=>/^[0-9]{10}-[0-9]{2}-[0-9]{6}$/.test(a);
-async function api(p){const r=await fetch(p),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
 function mgrLink(name,cik){const d=el('td');if(isCik(cik)){const a=el('a',name);a.href='/institutional-investor/manager/'+cik;d.append(a)}else d.textContent=name;return d}
 function accHref(a){return '/institutional-investor/'+a.replace(/-/g,'')}
 function stat(k,v,d){const c=el('div',null,'card stat');c.append(el('div',k,'k'),el('div',v,'v'),el('div',d||'','d mut'));return c}
@@ -547,3 +548,65 @@ def render_latest_filings():
 
 def render_filing(acc18):
     return shell("13F filing", "inst", _FILING_BODY, _COMMON_JS + _FILING_JS.replace("__ACC__", acc18), _MANAGER_CSS)
+
+
+# ------------------------------------------------------------------ insider trading overview
+_INS_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Insider trading</h1>
+ <p class="mut">Open-market purchases and sales reported by company insiders on SEC Form 4. Grants, option exercises and gifts are left out.</p>
+ <div class="card bar"><span id="st" class="mut">Loading…</span><span><button class="btn" id="upd">Update from SEC</button></span></div>
+ <div id="msg" class="err"></div>
+ <div class="stats" id="stats"></div>
+ <div class="tabs" id="tabs"></div>
+ <div id="view"></div>
+ <p class="note" id="note"></p>
+ <section class="card" style="margin-top:1rem"><h3>Latest filings (live from EDGAR)</h3><div id="live" class="mut">Loading…</div></section>
+</div>
+"""
+
+_INS_JS = r"""
+let D=null,tab='buys',days=30,plans=true,sym='';
+const side=(s)=>s==='buy'?'up':'dn';
+function table(cols,rows){const t=el('table',null,'t'),h=el('tr');cols.forEach(c=>{const th=el('th',c.l);if(c.n)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);
+ const tb=el('tbody');for(const r of rows){const tr=el('tr');for(const c of cols){const td=c.r?c.r(r):el('td',c.f(r));if(c.n)td.classList.add('n');tr.append(td)}tb.append(tr)}
+ if(!rows.length){const tr=el('tr'),td=el('td','No trades in this window','mut');td.colSpan=cols.length;tr.append(td);tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+const tick=r=>{const d=el('td');d.append(el('b',r.symbol));return d};
+function viewFor(){const base=[{l:'Ticker',r:tick},{l:'Company',f:r=>r.issuer}];
+ if(sym)return D.sym?table([{l:'Date',f:r=>fdate(r.date)},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},
+  {l:'Side',r:r=>el('td',r.side.toUpperCase()+(r.plan?' (10b5-1)':''),side(r.side))},{l:'Shares',n:1,f:r=>Math.round(r.shares).toLocaleString()},
+  {l:'Price',n:1,f:r=>'$'+r.price.toFixed(2)},{l:'Value',n:1,f:r=>money(r.value)}],D.sym.trades):el('div','Loading…','mut');
+ if(tab==='clusters')return table(base.concat([{l:'Insiders',n:1,f:r=>String(r.insiders)},{l:'Buys',n:1,f:r=>String(r.trades)},{l:'Total value',n:1,f:r=>money(r.value)},
+  {l:'Last buy',f:r=>fdate(r.last)},{l:'Who',f:r=>r.names.slice(0,3).join(', ')+(r.names.length>3?'…':'')}]),D.o.clusters);
+ const cols=base.concat([{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},{l:'Shares',n:1,f:r=>Math.round(r.shares).toLocaleString()},
+  {l:'Avg price',n:1,f:r=>'$'+r.price.toFixed(2)},{l:'Value',n:1,r:r=>{const d=el('td',money(r.value),tab==='buys'?'up':'dn');return d}},{l:'Last',f:r=>fdate(r.last)}]);
+ return table(cols,tab==='buys'?D.o.top_buys:D.o.top_sells)}
+function draw(){if(!D)return;const o=D.o;
+ $('stats').replaceChildren(stat('Bought',money(o.buy_value),'open market, last '+o.days+' days'),stat('Sold',money(o.sell_value),plans?'incl. 10b5-1 plans':'excl. 10b5-1 plans'),
+  stat('Trades',o.trades.toLocaleString(),'through '+fdate(o.as_of)),stat('Data',o.quarter,'SEC insider data set'));
+ const t=$('tabs');t.replaceChildren();
+ if(sym){const b=el('button','← all companies','btn');b.onclick=()=>{sym='';$('sq').value='';draw()};t.append(b,el('b','  '+sym+' · '+(D.sym?D.sym.quarter:''),'mut'))}
+ else for(const [k,l] of [['buys','Top buys'],['sells','Top sells'],['clusters','Cluster buys']]){const b=el('button',l,'btn'+(k===tab?' on':''));b.onclick=()=>{tab=k;draw()};t.append(b)}
+ const sel=el('select',null,'sel');for(const d of [7,30,90]){const op=el('option','Last '+d+' days');op.value=d;op.selected=d===days;sel.append(op)}
+ sel.onchange=()=>{days=+sel.value;load()};
+ const lab=el('label',null,'mut'),cb=el('input');cb.type='checkbox';cb.checked=!plans;cb.onchange=()=>{plans=!cb.checked;load()};lab.append(cb,document.createTextNode(' Hide 10b5-1 plan sales'));
+ const q=el('input',null,'q');q.id='sq';q.placeholder='Ticker';q.value=sym;q.style.minWidth='110px';
+ q.onkeydown=e=>{if(e.key==='Enter'){const v=q.value.trim().toUpperCase();if(/^[A-Z][A-Z0-9.\-]{0,9}$/.test(v)){sym=v;D.sym=null;draw();api('/api/insider-trades/'+v).then(r=>{D.sym=r;draw()}).catch(e=>$('msg').textContent=e.message)}else if(!v){sym='';draw()}}};
+ t.append(sel,lab,q);
+ $('view').replaceChildren(viewFor());
+ $('note').textContent='Cluster buy = three or more different insiders buying the same company. Values are shares x reported price. Form 4 data sets are quarterly: the window ends at the last filing in the set.'}
+async function load(){try{D={o:await api('/api/insider-trades?days='+days+'&plans='+(plans?1:0)),sym:null};$('msg').textContent='';draw()}catch(e){D=null;$('stats').replaceChildren();$('tabs').replaceChildren();$('view').replaceChildren();$('msg').textContent=e.message}}
+async function status(){try{const s=await api('/api/insider-trades/status');$('st').textContent=s.state==='running'?'Updating from SEC… this can take a minute':(s.quarter?'Data: '+s.quarter+' · built '+s.built_at.replace('T',' ').replace('+00:00',' UTC'):'Not built yet')+(s.state==='error'?' · last update failed: '+s.message:'');$('upd').disabled=s.state==='running';return s.state}catch(e){return 'idle'}}
+async function poll(){const s=await status();if(s==='running')setTimeout(poll,3000);else load()}
+$('upd').onclick=async()=>{try{await api('/api/insider-trades/refresh',{force:false});poll()}catch(e){$('msg').textContent=e.message}};
+async function live(){const b=$('live');try{const r=await api('/api/insiders');
+ if(!r.length){b.textContent='No recent open-market trades in the latest filings';return}
+ b.replaceChildren(table([{l:'Ticker',r:tick},{l:'Insider',f:r=>r.owner},{l:'Role',f:r=>r.role},{l:'Date',f:r=>fdate(r.date)},{l:'Side',r:r=>el('td',r.side.toUpperCase(),side(r.side))},
+  {l:'Shares',n:1,f:r=>Math.round(r.shares).toLocaleString()},{l:'Value',n:1,f:r=>money(r.value)}],r.slice(0,15)))}catch(e){b.textContent=e.message}}
+load();poll();live();
+"""
+
+
+def render_insiders():
+    return shell("Insider trading", "insider", _INS_BODY, _COMMON_JS + _INS_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)

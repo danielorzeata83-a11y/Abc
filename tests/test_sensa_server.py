@@ -236,7 +236,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
         pytest.skip("node not installed")
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
-             srv.render_filing("000000000126000007")]
+             srv.render_filing("000000000126000007"), srv.render_insiders()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -488,3 +488,78 @@ def test_institutional_landing_links_latest_filings_and_every_letter():
     assert b"/institutional-investor/latest-filings" in body
     assert b"/institutional-investor/managers/a" in body and b"/institutional-investor/managers/z" in body
     assert b"/institutional-investor/managers/0" in body
+
+
+class FakeInsiders:
+    def __init__(self):
+        self.calls, self.started = [], []
+
+    def overview(self, days=30, include_plans=True):
+        self.calls.append((days, include_plans))
+        return {"quarter": "Q3 2026", "as_of": "2026-09-30", "days": days, "top_buys": [], "top_sells": [], "clusters": []}
+
+    def symbol(self, sym, limit=200):
+        return {"symbol": sym.upper(), "trades": []}
+
+    def status(self):
+        return {"state": "idle", "message": "", "quarter": "Q3 2026", "built_at": "t", "as_of": "2026-09-30"}
+
+    def start(self, force=False):
+        self.started.append(force)
+        return True
+
+
+def _ins(method, path, body=None, headers=None, insiders=None):
+    ins = insiders or FakeInsiders()
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], insiders=ins)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        h = {"Content-Type": "application/json"} if method == "POST" else {}
+        h.update(headers or {})
+        c.request(method, path, body=json.dumps(body) if body is not None else None, headers=h)
+        r = c.getresponse()
+        return r.status, r.read(), ins
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_insider_page_and_aggregate_api_with_window_and_plan_options():
+    st, body, _ = _ins("GET", "/inside-trade")
+    assert st == 200 and b"Insider" in body and b"Cluster" in body
+    st, body, ins = _ins("GET", "/api/insider-trades?days=7&plans=0")
+    assert st == 200 and json.loads(body)["days"] == 7 and ins.calls == [(7, False)]
+    _, _, ins = _ins("GET", "/api/insider-trades")
+    assert ins.calls == [(30, True)]
+    _, _, ins = _ins("GET", "/api/insider-trades?days=99999")
+    assert ins.calls == [(365, True)]                                  # clamped
+    assert _ins("GET", "/api/insider-trades?days=abc")[0] == 400
+
+
+def test_insider_symbol_status_and_refresh_endpoints():
+    st, body, _ = _ins("GET", "/api/insider-trades/acme")
+    assert st == 200 and json.loads(body)["symbol"] == "ACME"
+    assert _ins("GET", "/api/insider-trades/bad%24")[0] == 400
+    assert json.loads(_ins("GET", "/api/insider-trades/status")[1])["quarter"] == "Q3 2026"
+    st, body, ins = _ins("POST", "/api/insider-trades/refresh", {"force": True})
+    assert st == 200 and json.loads(body) == {"started": True} and ins.started == [True]
+    assert _ins("POST", "/api/insider-trades/refresh", {}, headers={"Content-Type": "text/plain"})[0] == 415
+
+
+def test_insider_endpoints_503_when_not_configured_or_not_built():
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", "/api/insider-trades")
+        assert c.getresponse().status == 503
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    class Empty(FakeInsiders):
+        def overview(self, days=30, include_plans=True):
+            raise DataUnavailable("No insider data yet. Press Update")
+    st, body, _ = _ins("GET", "/api/insider-trades", insiders=Empty())
+    assert st == 503 and "Press Update" in json.loads(body)["error"]

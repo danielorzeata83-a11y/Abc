@@ -67,6 +67,15 @@ Ce înseamnă cifrele (și ce corectez, ca să nu inducă în eroare):
 - Observație de date: unii declaranți raportează valoarea în mii de dolari și după 2023, iar setul SEC o păstrează așa;
   cifre ca „$156,245 pentru 104 poziții" sunt erori ale declarantului, nu ale aplicației.
 
+## Insideri (`/inside-trade`)
+Tranzacții de piață (cod **P** = cumpărare, **S** = vânzare) din Form 4, din setul trimestrial **Insider Transactions Data Sets** al SEC
+(se descarcă o dată în `data/insiders/`; **Update from SEC** sau verificare zilnică). Vederi: cele mai mari cumpărări, cele mai mari vânzări,
+**cumpărări în grup** (cel puțin 3 insideri diferiți la aceeași companie), fereastră de 7/30/90 de zile, opțiune de a ascunde vânzările
+planificate 10b5-1, căutare după ticker, plus ultimele filing-uri din EDGAR (live, doar câteva zile).
+- Granturile, exercitările de opțiuni și cadourile sunt excluse; amendamentele (4/A) la fel.
+- Aceeași tranzacție raportată de mai mulți declaranți (declarare comună) se numără o dată; numele se unesc.
+- Limită: SEC publică setul trimestrial, deci ultimul trimestru complet e Q3 2026 (până la 30 sept.); octombrie apare doar în feed-ul live.
+
 ## Alerte Smart Money (`/smart-money/alerts`)
 Urmărești fonduri după CIK (buton **Follow** pe profilul fondului sau pe pagina de alerte). Când un fond depune un
 13F nou, aplicația compară cu trimestrul anterior și creează un **semnal**: poziții noi, ieșite, crescute, reduse

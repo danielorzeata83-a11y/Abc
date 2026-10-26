@@ -4,9 +4,8 @@
 `start()` does the same in a background thread (page button / daily loop) with a visible status.
 A new quarter produces one summary message for `notify` (e.g. Telegram)."""
 
-import threading
-
 from markov.data_providers import DataUnavailable
+from sensa.jobs import BackgroundJob
 from sensa.universe import load_managers, load_overview, refresh_overview
 
 
@@ -40,13 +39,11 @@ def format_summary(o, n=5):
     return "\n".join(lines)[:3500]
 
 
-class OverviewService:
+class OverviewService(BackgroundJob):
     def __init__(self, data_dir, fetch_listing, download, figi, top=100, notify=None):
+        super().__init__("downloading and processing SEC data sets")
         self.data_dir, self.fetch_listing, self.download = data_dir, fetch_listing, download
         self.figi, self.top, self.notify = figi, top, notify
-        self._lock = threading.Lock()
-        self._thread = None
-        self._state = {"state": "idle", "message": ""}
 
     def overview(self):
         try:
@@ -82,8 +79,7 @@ class OverviewService:
         return self._ms
 
     def status(self):
-        with self._lock:
-            st = dict(self._state)
+        st = self.state()
         try:
             o = load_overview(self.data_dir)
             st.update(period=o["period"], quarter=o["quarter"], built_at=o["generated"])
@@ -102,28 +98,3 @@ class OverviewService:
             except Exception:                    # a broken channel must not undo a successful build
                 pass
         return o
-
-    def start(self, force=False):
-        with self._lock:
-            if self._state["state"] == "running":
-                return False
-            self._state = {"state": "running", "message": "downloading and processing SEC data sets"}
-            self._thread = threading.Thread(target=self._run, args=(force,), daemon=True)
-            self._thread.start()
-            return True
-
-    def _run(self, force):
-        try:
-            o = self.check(force)
-            state = {"state": "done", "message": "up to date" if o is None else "rebuilt"}
-        except DataUnavailable as e:
-            state = {"state": "error", "message": str(e)}
-        except Exception as e:                   # never leave the status stuck on 'running'
-            state = {"state": "error", "message": f"unexpected error ({type(e).__name__})"}
-        with self._lock:
-            self._state = state
-
-    def wait(self, timeout=None):
-        t = self._thread
-        if t is not None:
-            t.join(timeout)
