@@ -1,0 +1,108 @@
+"""Institutional investors holding one stock: rows, summary, sorting and paging (same shape as the original site's API)."""
+
+import re
+
+from sensa.holders import holders_for_cusip, meta, sold_out_count
+from sensa.thirteenf import quarter_label
+
+CONTRACT_MULTIPLIER = 100
+MAX_LIMIT = 200
+
+# Editable: a filer whose name contains one of these is flagged as a prime broker / bank.
+PRIME_BROKER_PATTERNS = (
+    "GOLDMAN SACHS", "MORGAN STANLEY", "JPMORGAN", "J P MORGAN", "BANK OF AMERICA", "CITIGROUP", "CREDIT SUISSE",
+    "UBS GROUP", "UBS AG", "BARCLAYS", "DEUTSCHE BANK", "BNP PARIBAS", "WELLS FARGO", "NOMURA", "SOCIETE GENERALE",
+    "HSBC", "BMO", "ROYAL BANK OF CANADA", "TORONTO DOMINION", "MIZUHO", "JEFFERIES", "CANTOR FITZGERALD")
+
+SORT_KEYS = ("value", "shares", "name", "stockValue", "optionsValue", "callValue", "putValue", "callShares", "putShares",
+             "optionPositions", "ownershipPct", "prevShares", "prevStockValue", "shareChange", "shareChangePct",
+             "aum", "filed")
+
+
+def is_prime_broker(name):
+    n = re.sub(r"[^A-Z0-9 ]", " ", (name or "").upper())
+    n = " ".join(n.split())
+    return any(p in n for p in PRIME_BROKER_PATTERNS)
+
+
+def _pct(part, whole):
+    return round(part / whole * 100, 2) if whole else None
+
+
+def _row(h, shares_out, top_ciks, labels):
+    call, put = h["call_value"], h["put_value"]
+    options = call - put                                  # net call - put, as the original reports it
+    prev = h["prev_shares"]
+    change = h["shares"] - (prev or 0)
+    if not h["stock_positions"]:
+        kind = "OPTIONS"
+    elif prev is None:
+        kind = "NEW"
+    else:
+        kind = "INCREASED" if change > 0 else "DECREASED" if change < 0 else "UNCHANGED"
+    if prev is not None and prev > 0:
+        change_pct = round(change / prev * 100, 2)
+    else:
+        change_pct = None
+    reported_prev = prev is not None or h["filed_prev_quarter"]
+    return {
+        "cik": h["cik"], "name": h["name"], "accession": h["accession"], "filed": h["filed"], "form": h["form"], "aum": h["aum"],
+        "value": h["stock_value"] + options, "shares": h["shares"],
+        "isTopFund": h["cik"] in top_ciks, "isPrimeBroker": is_prime_broker(h["name"]),
+        "stockValue": h["stock_value"], "optionsValue": options, "callValue": call, "putValue": put,
+        "stockShares": h["shares"], "callShares": h["call_shares"], "putShares": h["put_shares"],
+        "callContracts": h["call_shares"] / CONTRACT_MULTIPLIER, "putContracts": h["put_shares"] / CONTRACT_MULTIPLIER,
+        "optionPositions": h["option_positions"],
+        "ownershipPct": _pct(h["shares"], shares_out["shares"]) if shares_out else None,
+        "prevShares": prev or 0, "prevStockValue": h["prev_stock_value"] or 0,
+        "shareChange": change, "shareChangePct": change_pct, "changeType": kind,
+        "history": [
+            {"label": labels[0], "shares": (prev or 0) if reported_prev else None,
+             "stockValue": (h["prev_stock_value"] or 0) if reported_prev else None, "reported": reported_prev},
+            {"label": labels[1], "shares": h["shares"], "stockValue": h["stock_value"], "reported": True}],
+    }
+
+
+def _sort_key(key):
+    def k(r):
+        v = r[key]
+        return v.lower() if isinstance(v, str) else v
+    return k
+
+
+def investors_page(db_path, cusip, ticker, shares_out=None, top_ciks=frozenset(), page=1, limit=20,
+                   sort_by="value", sort_order="desc"):
+    if sort_by not in SORT_KEYS:
+        raise ValueError(f"sortBy must be one of {', '.join(SORT_KEYS)}")
+    if sort_order not in ("asc", "desc"):
+        raise ValueError("sortOrder must be asc or desc")
+    if page < 1 or not 1 <= limit <= MAX_LIMIT:
+        raise ValueError(f"page must be >= 1 and limit between 1 and {MAX_LIMIT}")
+    m = meta(db_path)
+    labels = [quarter_label(m["prev_period"]), quarter_label(m["period"])]
+    rows = [_row(h, shares_out, top_ciks, labels) for h in holders_for_cusip(db_path, cusip)]
+    present = sorted((r for r in rows if r[sort_by] is not None), key=_sort_key(sort_by), reverse=sort_order == "desc")
+    ordered = present + [r for r in rows if r[sort_by] is None]          # unknown values last in both directions
+    stock_value, stock_shares = sum(r["stockValue"] for r in rows), sum(r["shares"] for r in rows)
+    call, put = sum(r["callValue"] for r in rows), sum(r["putValue"] for r in rows)
+    total = stock_value + call - put
+    summary = {
+        "ticker": ticker, "cusip": cusip, "filerCount": len(rows),
+        "filersWithOptions": sum(1 for r in rows if r["optionPositions"]),
+        "topFundCount": sum(1 for r in rows if r["isTopFund"]), "primeBrokerCount": sum(1 for r in rows if r["isPrimeBroker"]),
+        "callFilerCount": sum(1 for r in rows if r["callShares"]), "putFilerCount": sum(1 for r in rows if r["putShares"]),
+        "totalValue": total, "stockValue": stock_value, "optionsValue": call - put, "callValue": call, "putValue": put,
+        "stockShares": stock_shares, "contractMultiplier": CONTRACT_MULTIPLIER,
+        "optionsPct": _pct(abs(call - put), total) if total else 0,
+        "newCount": sum(1 for r in rows if r["changeType"] == "NEW"),
+        "increasedCount": sum(1 for r in rows if r["changeType"] == "INCREASED"),
+        "decreasedCount": sum(1 for r in rows if r["changeType"] == "DECREASED"),
+        "soldOutCount": sold_out_count(db_path, cusip),
+        "sharesOutstanding": shares_out["shares"] if shares_out else None,
+        "sharesOutstandingAsOf": shares_out["as_of"] if shares_out else None,
+        "heldPct": _pct(stock_shares, shares_out["shares"]) if shares_out else None}
+    start = (page - 1) * limit
+    return {"summary": summary, "coverage": {"quarter": labels[1], "period": m["period"], "filers": len(rows)},
+            "quarters": [{"label": x} for x in labels], "data": ordered[start:start + limit],
+            "pagination": {"page": page, "limit": limit, "total": len(rows), "totalPages": -(-len(rows) // limit)},
+            "sort": {"sortBy": sort_by, "sortOrder": sort_order}}
