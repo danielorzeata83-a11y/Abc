@@ -48,3 +48,11 @@ def test_plain_language_signals_and_empty_chain():
 def test_expired_contracts_are_ignored():
     c = chain() + [row("call", 100, "2026-10-20", vol=99999, oi=1)]
     assert option_flow(100.0, c, "2026-10-26")["call_volume"] == 5460
+
+
+def test_same_day_expiries_and_in_the_money_contracts_are_not_called_unusual():
+    c = chain() + [row("put", 105, "2026-11-20", vol=9000, oi=100),                       # in the money put: mostly intrinsic value
+                   row("call", 105, "2026-10-26", vol=9000, oi=100),                      # expires today: day-trading flow
+                   row("call", 98, "2026-11-20", vol=9000, oi=100)]                       # in the money call
+    f = option_flow(100.0, c, "2026-10-26")
+    assert [(u["type"], u["strike"], u["expiration"]) for u in f["unusual"]] == [("call", 110.0, "2026-10-30")]

@@ -21,7 +21,8 @@ def option_flow(spot, chain, today_iso):
     unusual = []
     for o in rows:
         v, interest = o["volume"] or 0, o["open_interest"] or 0
-        if v >= 500 and v >= 3 * max(interest, 1) and abs(o["strike"] - spot) / spot <= 0.3:
+        otm = o["strike"] >= spot if o["option_type"] == "call" else o["strike"] <= spot       # in-the-money premium is mostly intrinsic value
+        if o["dte"] >= 1 and otm and v >= 500 and v >= 3 * max(interest, 1) and abs(o["strike"] - spot) / spot <= 0.3:
             mid = ((o["bid"] or 0) + (o["ask"] or 0)) / 2 if o.get("ask") else 0.0
             unusual.append({"type": o["option_type"], "strike": o["strike"], "expiration": o["expiration"], "dte": o["dte"], "volume": int(v),
                             "open_interest": int(interest), "premium": v * 100 * mid})
