@@ -1165,3 +1165,8 @@ def test_fundamentals_endpoint_and_stock_page_card():
         server.shutdown()
     html = srv.render_stock("AAPL")
     assert "/api/fundamentals/" in html and "Valuation and quality" in html
+
+
+def test_picks_page_shows_the_signal_evidence_card():
+    html = srv.render_picks()
+    assert "Evidence from the past" in html and "weights_source" in html and "too_little_data" in html

@@ -210,3 +210,18 @@ def test_picks_board_adds_the_market_regime_with_its_backtest_and_the_brief_repo
     b = build_brief({**out, "stocks": out["stocks"], "etfs": out["etfs"]}, None, [], [], [], extra=[])
     reg_items = [i for s in b["sections"] if s["id"] == "regime" for i in s["items"]]
     assert reg_items and reg_items[0]["key"] == f"regime:{reg['label']}:{reg['since']}"
+
+
+def test_picks_use_the_evidence_weights_only_with_enough_dates_and_show_the_evidence():
+    rows = [row(f"S{i}", 60 + i, 50) for i in range(8)]
+    series = {f"S{i}": walk(0.001, 0.004, seed=i) for i in range(8)}
+    series["SPY"] = walk(0.0005, 0.006, seed=77)
+    ev = {"n_signal_dates": 8, "signals": {"smart_money": {"verdict": "works"}}, "weights": {"default": {}, "evidence": {"momentum": 0.4, "trend": 0.1, "quality": 0.1, "smart": 0.3, "insider": 0.0, "politician": 0.1}}}
+    adj = lambda t, y: (_ for _ in ()).throw(DataUnavailable("x"))
+    out = picks_board(lambda: pick_overview(rows), Book(series), None, None, adj, research_fn=lambda: ev)
+    assert out["method"]["weights_source"] == "evidence" and out["method"]["stock_weights"]["insider"] == 0.0 and out["evidence"]["n_signal_dates"] == 8
+    few = {**ev, "n_signal_dates": 3}
+    out2 = picks_board(lambda: pick_overview(rows), Book(series), None, None, adj, research_fn=lambda: few)
+    assert out2["method"]["weights_source"] == "default" and out2["method"]["stock_weights"]["insider"] == 0.15 and out2["evidence"]["n_signal_dates"] == 3
+    out3 = picks_board(lambda: pick_overview(rows), Book(series), None, None, adj, research_fn=lambda: (_ for _ in ()).throw(DataUnavailable("none yet")))
+    assert out3["method"]["weights_source"] == "default" and out3["evidence"] is None

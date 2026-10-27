@@ -1172,6 +1172,16 @@ function render(d){const w=el('div');
  if(d.regime)w.append(sec('Market regime (S&P 500)',regimeCard(d.regime),'A rule tested on the past, not a forecast. Regimes change; one index and a few episodes prove little.'));
  w.append(sec('Top '+d.stocks.length+' stocks',pickTable(d.stocks,false),'Among the '+d.pool.stocks+' most widely held stocks of the top funds ('+d.pool.stocks_scored+' passed the filters). Weights: inverse volatility, at most '+Math.round(d.method.max_weight*100)+'% each. Prices as of '+d.as_of+'.'));
  w.append(sec('Top '+d.etfs.length+' ETFs',pickTable(d.etfs,true),'From '+d.pool.etfs+' ETFs (broad catalogue plus those the funds hold); leveraged and inverse funds excluded; at most '+d.method.max_per_category+' per category; identical index funds listed once.'));
+ const evd=d.evidence;
+ if(evd){const V={works:['Works','#22c58b'],not_proven:['Not proven','#ffb347'],negative:['Negative','#f0524f'],too_little_data:['Too little data','#8497b5']};
+  const t=el('table',null,'t'),h=el('tr');['Signal','Decided on','Avg rank correlation','t-stat','Top fifth beat the rest by','Dates','Verdict'].forEach((x,i)=>{const th=el('th',x);if(i&&i<6)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+  for(const k of Object.keys(evd.signals)){const g=evd.signals[k],st=g.stats[g.decided_on_days],row=el('tr'),v=V[g.verdict]||[g.verdict,'#8497b5'],vs=el('span',v[0]);vs.style.cssText='font-weight:700;color:'+v[1];const vc=el('td');vc.append(vs);
+   row.append(el('td',g.label),el('td',g.decided_on_days+' trading days','n'),el('td',st.mean_ic==null?'-':st.mean_ic.toFixed(3),'n'),el('td',st.ic_t==null?'-':st.ic_t.toFixed(1),'n'),
+    el('td',st.top_quintile_excess_pct==null?'-':(st.top_quintile_excess_pct>=0?'+':'')+st.top_quintile_excess_pct.toFixed(1)+' pts','n'),el('td',String(g.n_dates),'n'),vc);tb.append(row)}
+  t.append(tb);const w2=el('div',null,'tbl');w2.append(t);const box=el('div');box.append(w2);
+  const wt=d.method.weights_source==='evidence'?'The ranking above uses weights scaled by this evidence (weights_source: evidence).':'Not enough quarters yet (need 6): the ranking uses the default weights (weights_source: default).';
+  box.append(el('div',wt,'sm'));for(const c of evd.caveats)box.append(el('div',c,'sm mut'));
+  w.append(sec('Evidence from the past (point-in-time test of each signal, '+evd.meta.quarters+' quarters)',box,'Rank correlation: do stocks that scored high go on to beat the others? A value near 0 means no predictive power; t-stats above 2 are needed before a signal is called proven. Verdicts: too_little_data, not_proven, works, negative.'))}
  const tr=d.track_record;
  if(tr){const box=el('div');
   if(!tr.rows.length)box.append(el('div','Collecting: '+tr.snapshots+' snapshot(s) saved so far. Today\'s list is saved automatically; results appear from the next day.','mut'));

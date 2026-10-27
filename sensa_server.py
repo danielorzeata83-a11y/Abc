@@ -739,6 +739,44 @@ def build_live(smart, thirteenf):
                        on_update=rebuild_view)
 
 
+def research_compute(data_dir, smart, insiders, adj, quarters=9):
+    """Past 13F quarters and insider data sets (downloaded once, reused), prices, then the point-in-time evidence for each signal."""
+    from sensa.insiders import find_insider_sets, load_trades
+    from sensa.picks import STOCK_WEIGHTS
+    from sensa.research_job import research_board
+    from sensa.universe import _tables, build_overview, find_data_sets
+    zdir = os.path.join(data_dir, "zips")
+    os.makedirs(zdir, exist_ok=True)
+
+    def ensure_zip(s):
+        dest = os.path.join(zdir, os.path.basename(s["url"]))
+        if not os.path.exists(dest):
+            smart.download(s["url"], dest + ".part")
+            os.replace(dest + ".part", dest)
+        return dest
+
+    def build_ov(cur, prev, period, prev_period):
+        return build_overview(cur, prev, period, prev_period, top=100, figi=smart.figi, stocks_limit=500, flows_limit=60)
+
+    def load_ins(path):
+        z, op = _tables(path, 3 * 10 ** 9)
+        with z:
+            return [t for t in load_trades(op("SUBMISSION.tsv"), op("REPORTINGOWNER.tsv"), op("NONDERIV_TRANS.tsv")) if t["value"] >= 5000]
+    cache = {}
+
+    def closes_fn(t):
+        if t not in cache:
+            try:
+                rows = adj.get(t, 10)
+                cache[t] = ([r[0] for r in rows], [r[1] for r in rows]) if rows else None
+            except DataUnavailable:
+                cache[t] = None
+        return cache[t]
+    sets = find_data_sets(smart.fetch_listing())[:quarters]
+    isets = find_insider_sets(insiders.fetch_listing())[:quarters + 1] if insiders is not None else []
+    return research_board(data_dir, sets, isets, ensure_zip, build_ov, load_ins, closes_fn, STOCK_WEIGHTS)
+
+
 class Perf:
     """Prices + the portfolio service and the three background leaderboards."""
     def __init__(self, portfolio, jobs, brief=None, mine=None):
@@ -770,7 +808,10 @@ def build_perf(smart, insiders, politicians, watcher=None):
     from sensa.company import CompanyInfo
     from sensa.fundamentals import Fundamentals
     fundamentals = Fundamentals(lambda url: http_fetch(url, ua), CompanyInfo(lambda url: http_fetch(url, ua)).cik, os.path.join(d, "fundamentals.json")).get
-    jobs["picks"] = PerfJob("building the picks", lambda: picks_board(overview, prices, insiders, politicians, adj.get, track=track, fundamentals=fundamentals),
+    jobs["research"] = PerfJob("testing the signals on past data (downloads old 13F and insider data sets)", lambda: research_compute(d, smart, insiders, adj),
+                               os.path.join(d, "perf_research.json"))
+    jobs["picks"] = PerfJob("building the picks", lambda: picks_board(overview, prices, insiders, politicians, adj.get, track=track, fundamentals=fundamentals,
+                                                                      research_fn=lambda: jobs["research"].result()["data"]),
                             os.path.join(d, "perf_picks.json"))
     if politicians is not None:
         jobs["members"] = PerfJob("pricing House trades", lambda: members_board(politicians, prices), os.path.join(d, "perf_members.json"))
@@ -929,7 +970,7 @@ def main():
     if perf is not None and a.smart_hours > 0:
         import threading
         for name, job in perf.jobs.items():                 # prices change daily: refresh every 6 hours (the brief hourly)
-            threading.Thread(target=_perf_loop, args=(job, 1 if name == 'brief' else 6, 10, threading.Event()), daemon=True).start()
+            threading.Thread(target=_perf_loop, args=(job, 1 if name == 'brief' else 24 if name == 'research' else 6, 10, threading.Event()), daemon=True).start()
     if live is not None and a.live_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(live, a.live_hours, threading.Event()), daemon=True).start()

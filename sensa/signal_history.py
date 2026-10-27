@@ -27,16 +27,17 @@ def _pit_closes(closes_fn, ticker, day):
     return h[1][:i]
 
 
-def _universe(ov, min_holders):
-    return [s for s in ov["stocks"] if s["kind"] in ("stock", "adr") and not s.get("gone") and not s.get("new_listing")
+def _universe(ov, min_holders, max_names=200):
+    rows = [s for s in ov["stocks"] if s["kind"] in ("stock", "adr") and not s.get("gone") and not s.get("new_listing")
             and s["holders"] >= min_holders and s.get("ticker")]
+    return sorted(rows, key=lambda s: (s["holders"], s["value"]), reverse=True)[:max_names]
 
 
 def _insider_score(f):
     return float(np.sign(f["net"]) * math.log1p(abs(f["net"]) / 1e5) + 0.5 * f["buyers"]) if f else 0.0
 
 
-def build_samples(overviews, insider_trades, closes_fn, horizons=(21, 63), min_holders=10, extra_days=90):
+def build_samples(overviews, insider_trades, closes_fn, horizons=(21, 63), min_holders=10, extra_days=90, max_names=200):
     fr = ForwardReturns(closes_fn)
     ovs = sorted(overviews, key=lambda o: o["signal_date"])
     keys = ("smart_money", "holders_change", "active_flow", "net_new", "momentum_12_1", "trend", "quality_sharpe", "insider_net")
@@ -49,7 +50,7 @@ def build_samples(overviews, insider_trades, closes_fn, horizons=(21, 63), min_h
     quarterly = [o["signal_date"] for o in ovs]
     for ov in ovs:
         day = ov["signal_date"]
-        uni = _universe(ov, min_holders)
+        uni = _universe(ov, min_holders, max_names)
         feats = {s["ticker"]: smart_money_features(s) for s in uni}
         hz, fz = zscores({t: f["holders_change"] for t, f in feats.items()}), zscores({t: f["flow"] for t, f in feats.items()})
         out["holders_change"][day] = rows(uni, day, {t: f["holders_change"] for t, f in feats.items()})
@@ -62,7 +63,7 @@ def build_samples(overviews, insider_trades, closes_fn, horizons=(21, 63), min_h
         ov = next((o for o in reversed(ovs) if o["signal_date"] <= day), None)
         if ov is None:
             continue
-        uni = _universe(ov, min_holders)
+        uni = _universe(ov, min_holders, max_names)
         mom, trend, qual = {}, {}, {}
         for s in uni:
             c = _pit_closes(closes_fn, s["ticker"], day)
