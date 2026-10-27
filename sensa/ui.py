@@ -1163,7 +1163,13 @@ function curve(c){const W=820,H=240,L=44,B=22,T=8,ns='http://www.w3.org/2000/svg
  for(const k in c.models)svg.append(mk('path',{d:c.models[k].map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' '),fill:'none',stroke:col[k],'stroke-width':k==='picks_rule'?2.4:1.4,'stroke-dasharray':k==='benchmark'?'4 3':'0'}));
  for(const i of [0,n-1]){const t=mk('text',{x:X(i),y:H-5,'text-anchor':i?'end':'start',fill:'#8497b5','font-size':11});t.textContent=c.dates[i];svg.append(t)}
  const box=el('div');box.append(svg);return box}
+function regimeCard(g){const L={risk_on:['Risk-on','#22c58b'],caution:['Caution','#ffb347'],risk_off:['Risk-off','#f0524f']}[g.label],box=el('div');
+ const h=el('div');h.style.cssText='display:flex;align-items:center;gap:.8rem;flex-wrap:wrap';const chip=el('span',L[0]);chip.style.cssText='font-weight:800;font-size:1.1rem;color:'+L[1];h.append(chip,el('span','since '+g.since+' · S&P 500 as of '+g.as_of,'mut sm'));box.append(h);
+ for(const r of g.reasons)box.append(el('div',r,'sm'));box.append(el('div',g.advice,'sm'));
+ if(g.backtest){const t=el('div',g.backtest.verdict_text+' ('+g.backtest.time_in_market_pct.toFixed(0)+'% of the time invested.)','sm');t.style.marginTop='.5rem';box.append(t)}
+ return box}
 function render(d){const w=el('div');
+ if(d.regime)w.append(sec('Market regime (S&P 500)',regimeCard(d.regime),'A rule tested on the past, not a forecast. Regimes change; one index and a few episodes prove little.'));
  w.append(sec('Top '+d.stocks.length+' stocks',pickTable(d.stocks,false),'Among the '+d.pool.stocks+' most widely held stocks of the top funds ('+d.pool.stocks_scored+' passed the filters). Weights: inverse volatility, at most '+Math.round(d.method.max_weight*100)+'% each. Prices as of '+d.as_of+'.'));
  w.append(sec('Top '+d.etfs.length+' ETFs',pickTable(d.etfs,true),'From '+d.pool.etfs+' ETFs (broad catalogue plus those the funds hold); leveraged and inverse funds excluded; at most '+d.method.max_per_category+' per category; identical index funds listed once.'));
  const tr=d.track_record;

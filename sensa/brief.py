@@ -40,6 +40,12 @@ def build_brief(picks, prev_snapshot, insider_trades, politician_trades, fund_ev
             "text": f"{s}: {len(x['owners'])} insiders bought {_money(x['value'])} (last on {x['last']})"}
            for s, x in sorted(by.items(), key=lambda kv: -kv[1]["value"]) if len(x["owners"]) >= 3 and x["value"] >= 100_000]
     sections.append({"id": "insiders", "title": "Insider cluster buys (last 2 weeks)", "items": ins})
+    reg = picks.get("regime")
+    if reg:
+        name = reg["label"].replace("_", "-")
+        sections.append({"id": "regime", "title": "Market regime", "items": [
+            {"key": f"regime:{reg['label']}:{reg['since']}", "ticker": None, "severity": "info" if reg["label"] == "risk_on" else "warn",
+             "text": f"The market is in a {name} regime since {reg['since']}. {reg['advice']}"}]})
 
     pb = {}
     for t in politician_trades:

@@ -187,3 +187,26 @@ def test_brief_board_without_picks_says_so():
         raise DataUnavailable("Performance numbers are not computed yet")
     with pytest.raises(DataUnavailable):
         brief_board(none, TrackRecord(None), None, None, None, BriefService(None))
+
+
+def test_picks_board_adds_the_market_regime_with_its_backtest_and_the_brief_reports_the_episode():
+    import numpy as np
+    import pandas as pd
+    rows = [row(f"S{i}", 60 + i, 50) for i in range(8)]
+    series = {f"S{i}": walk(0.001, 0.004, seed=i, n=900) for i in range(8)}
+    series["SPY"] = walk(0.0006, 0.006, seed=77, n=900)
+    dates = list(pd.bdate_range("2020-01-01", periods=900).strftime("%Y-%m-%d"))
+    spy_long = list(100 * np.cumprod(1 + np.random.default_rng(3).normal(0.0004, 0.008, 3000)))
+    d_long = list(pd.bdate_range("2010-01-01", periods=3000).strftime("%Y-%m-%d"))
+
+    def adjusted(t, years):
+        if t == "SPY":
+            return list(zip(d_long, spy_long))
+        return list(zip(dates, series[t]))
+    out = picks_board(lambda: pick_overview(rows), Book(series), None, None, adjusted)
+    reg = out["regime"]
+    assert reg["label"] in ("risk_on", "caution", "risk_off") and reg["backtest"]["verdict"] in ("helped", "mixed", "did_not_help")
+    from sensa.brief import build_brief
+    b = build_brief({**out, "stocks": out["stocks"], "etfs": out["etfs"]}, None, [], [], [], extra=[])
+    reg_items = [i for s in b["sections"] if s["id"] == "regime" for i in s["items"]]
+    assert reg_items and reg_items[0]["key"] == f"regime:{reg['label']}:{reg['since']}"

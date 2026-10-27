@@ -123,6 +123,16 @@ def picks_board(overview_fn, prices, insiders, politicians, adjusted_get, years=
     if track is not None:
         track.record(out)
         out["track_record"] = track.summary(prices)
+    try:
+        from sensa.regime_filter import current_regime, gate_backtest
+        spy = adjusted_get("SPY", 20)
+        d, c = [x[0] for x in spy], [x[1] for x in spy]
+        reg = current_regime(c, d)
+        if reg:
+            reg["backtest"] = gate_backtest(c, d)
+        out["regime"] = reg
+    except (DataUnavailable, ValueError):
+        out["regime"] = None
     held = sorted((s for s in overview["stocks"] if s["kind"] in ("stock", "adr") and not s.get("gone") and not s.get("new_listing")),
                   key=lambda s: (s["holders"], s["value"]), reverse=True)[:backtest_n]
     try:
