@@ -1,5 +1,6 @@
 """One background job at a time with a visible status (shared by the Smart Money and insider builds)."""
 
+import traceback
 import threading
 
 from markov.data_providers import DataUnavailable
@@ -37,6 +38,7 @@ class BackgroundJob:
         except DataUnavailable as e:
             state = {"state": "error", "message": str(e)}
         except Exception as e:                    # never leave the status stuck on 'running'
+            traceback.print_exc()             # the status only carries the class name; keep the cause in the log
             state = {"state": "error", "message": f"unexpected error ({type(e).__name__})"}
         with self._lock:
             self._state = state

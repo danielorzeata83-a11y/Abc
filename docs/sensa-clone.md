@@ -243,3 +243,10 @@ python -m pytest tests -k sensa
 - **Prețuri live (WebSocket)**: nu există sursă gratuită; Cboe e oricum întârziat, pagina reîmprospătează la 60 s.
 - **Option flow / dark pool real**: fără sursă gratuită bună.
 - Cont, watchlist salvat, conectare la brokeri.
+
+### Real result of the historical test (run 2026-10-27)
+
+8 quarterly signal dates (2024-11 .. 2026-08), 1106 tickers, 134k insider trades. **No signal reached "works"**
+(all `not_proven`, none with t >= 2 in the positive direction). Fund-based signals (top funds buying, active flow)
+had slightly *negative* rank correlation over 21 days (t about -2); momentum, quality and insider net buying were
+mildly positive over 63 days (t 1.1-1.5), not significant. Universe is survivorship-biased, so even these are flattered.

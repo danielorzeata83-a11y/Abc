@@ -285,7 +285,13 @@ def find_data_sets(html):
 
 
 def _member(z, name, max_bytes):
-    info = z.getinfo(name)
+    try:
+        info = z.getinfo(name)
+    except KeyError:                        # older data sets nest the files in a folder
+        hits = [i for i in z.infolist() if i.filename.rsplit("/", 1)[-1] == name]
+        if not hits:
+            raise
+        info = hits[0]
     if info.file_size > max_bytes:
         raise DataUnavailable(f"{name} is too large ({info.file_size} bytes)")
     return io.TextIOWrapper(z.open(info), encoding="utf-8", errors="replace", newline="")

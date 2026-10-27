@@ -468,3 +468,13 @@ def test_refresh_builds_a_missing_holders_index_even_for_a_current_quarter(tmp_p
     (tmp_path / "holders.db").unlink()
     assert refresh_overview(str(tmp_path), LISTING, fake_download_factory(tmp_path, log), FakeInfo(), top=10) is None
     assert (tmp_path / "holders.db").exists() and len(log) == 2
+
+
+def test_tables_find_members_inside_a_subfolder(tmp_path):
+    import zipfile
+    from sensa.universe import _tables
+    p = tmp_path / "old.zip"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("01JUN2025-31AUG2025_form13f/SUBMISSION.tsv", "A\tB\n1\t2\n")
+    _, op = _tables(str(p), 10_000)
+    assert op("SUBMISSION.tsv").read().startswith("A\tB")

@@ -771,7 +771,7 @@ def research_compute(data_dir, smart, insiders, adj, quarters=9):
             try:
                 rows = adj.get(t, 10)
                 cache[t] = ([r[0] for r in rows], [r[1] for r in rows]) if rows else None
-            except DataUnavailable:
+            except (DataUnavailable, ValueError):      # ValueError: a symbol Yahoo cannot take
                 cache[t] = None
         return cache[t]
     sets = find_data_sets(smart.fetch_listing())[:quarters]
