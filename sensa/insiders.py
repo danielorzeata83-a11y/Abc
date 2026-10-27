@@ -127,6 +127,8 @@ def aggregate(trades, as_of, days=30, top=10, min_insiders=3, include_plans=True
 # ------------------------------------------------------------------ build / store / serve
 import json
 import os
+
+from sensa.fsutil import replace_file
 import re
 from datetime import datetime, timezone
 
@@ -177,7 +179,7 @@ def refresh_insiders(data_dir, listing_html, download, min_value=5000, force=Fal
     dest = os.path.join(zdir, os.path.basename(latest["url"]))
     if not os.path.exists(dest):
         download(latest["url"], dest + ".part")
-        os.replace(dest + ".part", dest)
+        replace_file(dest + ".part", dest)
     z, opener = _tables(dest, max_member_bytes)
     with z:
         trades = load_trades(opener("SUBMISSION.tsv"), opener("REPORTINGOWNER.tsv"), opener("NONDERIV_TRANS.tsv"))

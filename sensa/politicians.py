@@ -167,6 +167,8 @@ def extract_text(path):
 # ------------------------------------------------------------------ build / store / serve
 import json
 import os
+
+from sensa.fsutil import replace_file
 import tempfile
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -252,7 +254,7 @@ class PoliticiansService(BackgroundJob):
             zpath = os.path.join(self.data_dir, f"index-{year}.zip")
             try:
                 self.download(_INDEX_URL.format(year=year), zpath + ".part")
-                os.replace(zpath + ".part", zpath)
+                replace_file(zpath + ".part", zpath)
                 with zipfile.ZipFile(zpath) as z:
                     docs = parse_index(z.read(f"{year}FD.xml").decode("utf-8", "replace"))
             except (zipfile.BadZipFile, KeyError, OSError) as e:

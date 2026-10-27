@@ -14,6 +14,8 @@ import argparse
 import time
 import json
 import os
+
+from sensa.fsutil import replace_file
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -754,7 +756,7 @@ def research_compute(data_dir, smart, insiders, adj, quarters=9):
         dest = os.path.join(zdir, os.path.basename(s["url"]))
         if not os.path.exists(dest):
             smart.download(s["url"], dest + ".part")
-            os.replace(dest + ".part", dest)
+            replace_file(dest + ".part", dest)
         return dest
 
     def build_ov(cur, prev, period, prev_period):
