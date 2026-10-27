@@ -31,7 +31,7 @@ from sensa.insiders import InsiderService
 from sensa.investors import InvestorService, UnknownTicker
 from sensa.managers import browse
 from sensa.politicians import PoliticiansService
-from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_brief, render_health, render_investors, render_lab, render_picks, render_stock, render_latest_filings,
+from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_brief, render_health, render_investors, render_lab, render_mine, render_picks, render_stock, render_latest_filings,
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -290,6 +290,15 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._send(404, "not found", "text/plain")
                 else:
                     self._send(200, render_investors(parts[1].upper()), "text/html; charset=utf-8")
+                return
+            if u.path.rstrip("/") == "/my-portfolio":
+                self._send(200, render_mine(), "text/html; charset=utf-8")
+                return
+            if u.path == "/api/my-portfolio":
+                if perf is None or getattr(perf, "mine", None) is None:
+                    self._json(503, {"error": "the portfolio is not configured (set SEC_CONTACT)"})
+                else:
+                    self._json(200, {"positions": perf.mine.positions(), "analysis": perf.mine.get()})
                 return
             if u.path.rstrip("/") == "/brief":
                 self._send(200, render_brief(), "text/html; charset=utf-8")
@@ -576,6 +585,15 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._json(200, {"started": insiders.start(force=bool(body.get("force")))})
                 return
             pp = [x for x in route.split("/") if x]
+            if pp == ["api", "my-portfolio"]:
+                if perf is None or getattr(perf, "mine", None) is None:
+                    self._json(503, {"error": "the portfolio is not configured (set SEC_CONTACT)"})
+                    return
+                try:
+                    self._json(200, {"positions": perf.mine.set(body.get("positions"))})
+                except ValueError as e:
+                    self._json(400, {"error": str(e)})
+                return
             if pp == ["api", "lab", "run"]:
                 if lab is None:
                     self._json(503, {"error": "the portfolio lab is not configured (set SEC_CONTACT)"})
@@ -716,11 +734,11 @@ def build_live(smart, thirteenf):
 
 class Perf:
     """Prices + the portfolio service and the three background leaderboards."""
-    def __init__(self, portfolio, jobs, brief=None):
-        self.portfolio, self.jobs, self.brief = portfolio, jobs, brief
+    def __init__(self, portfolio, jobs, brief=None, mine=None):
+        self.portfolio, self.jobs, self.brief, self.mine = portfolio, jobs, brief, mine
 
 
-def build_perf(smart, insiders, politicians, watcher=None, extra_fn=None):
+def build_perf(smart, insiders, politicians, watcher=None):
     if smart is None:
         return None
     from sensa.brief import BriefService
@@ -745,10 +763,13 @@ def build_perf(smart, insiders, politicians, watcher=None, extra_fn=None):
         jobs["members"] = PerfJob("pricing House trades", lambda: members_board(politicians, prices), os.path.join(d, "perf_members.json"))
     if insiders is not None:
         jobs["insiders"] = PerfJob("pricing insider trades", lambda: insiders_board(insiders, prices), os.path.join(d, "perf_insiders.json"))
+    from sensa.my_portfolio import MyPortfolio
+    mine = MyPortfolio(os.path.join(d, "my_portfolio.json"), prices, overview_fn=overview, insiders=insiders,
+                       picks_fn=lambda: jobs["picks"].result()["data"])
     brief = BriefService(os.path.join(d, "brief.json"))
     jobs["brief"] = PerfJob("building the daily brief", lambda: brief_board(lambda: jobs["picks"].result()["data"], track, insiders, politicians, watcher, brief,
-                                                                           notifier=telegram_notifier(), extra_fn=extra_fn), os.path.join(d, "perf_brief.json"))
-    return Perf(portfolio, jobs, brief)
+                                                                           notifier=telegram_notifier(), extra_fn=lambda: [x for x in [mine.alerts()] if x]), os.path.join(d, "perf_brief.json"))
+    return Perf(portfolio, jobs, brief, mine)
 
 
 def build_lab(smart, insiders, watchlist):

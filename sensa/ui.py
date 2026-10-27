@@ -28,7 +28,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 @media(max-width:700px){.nav{padding:.5rem .6rem;overflow-x:auto}.wrap{padding:.7rem}}
 """
 
-NAV_ITEMS = (("dash", "/", "Dashboard"), ("picks", "/picks", "Picks"), ("brief", "/brief", "Brief"), ("smart", "/smart-money", "Smart Money"),
+NAV_ITEMS = (("dash", "/", "Dashboard"), ("picks", "/picks", "Picks"), ("brief", "/brief", "Brief"), ("mine", "/my-portfolio", "My portfolio"), ("smart", "/smart-money", "Smart Money"),
              ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"), ("political", "/political-trades", "Politicians"),
              ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"), ("health", "/health", "Status"))
 
@@ -1254,3 +1254,56 @@ load();setInterval(load,300000);
 
 def render_brief():
     return shell("Daily brief", "brief", _BRIEF_BODY, _BRIEF_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)
+
+
+# ------------------------------------------------------------------ my portfolio
+_MINE_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">My portfolio</h1>
+ <p class="mut">Enter what you hold, one position per line: <b>TICKER shares average-cost</b> (cost is optional). It stays on this computer. You get value, profit, risk,
+ what the big funds and insiders are doing with your stocks, warnings (also in the daily brief) and alternative weightings. Not investment advice.</p>
+ <section class="card"><textarea id="ta" rows="7" spellcheck="false" placeholder="AAPL 25 172.50&#10;MSFT 10 310&#10;SPY 5"
+  style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.6rem;font:13px/1.4 ui-monospace,Consolas,monospace"></textarea>
+  <div style="margin-top:.6rem"><button class="btn on" id="save">Save and analyse</button> <span id="st" class="mut"></span><span id="msg" class="err"></span></div></section>
+ <div id="out"></div>
+</div>
+"""
+
+_MINE_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const money=v=>{if(v==null)return '-';const a=Math.abs(v),s=a>=1e9?'$'+(a/1e9).toFixed(2)+'B':a>=1e6?'$'+(a/1e6).toFixed(2)+'M':'$'+Math.round(a).toLocaleString();return (v<0?'-':'')+s};
+const pc=(v,d=1)=>v==null?'-':(v>0?'+':'')+v.toFixed(d)+'%',cls=v=>v>0?'up':v<0?'dn':'mut';
+async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+function stat(k,v,d,c){const x=el('div',null,'card stat');x.append(el('div',k,'k'),el('div',v,'v'+(c?' '+c:'')),el('div',d||'','d mut'));return x}
+function sec(t,n,note){const s=el('section',null,'card');s.style.marginTop='1rem';s.append(el('h3',t),n);if(note)s.append(el('div',note,'note'));return s}
+function table(head,rows){const t=el('table',null,'t'),h=el('tr');head.forEach((x,i)=>{const th=el('th',x);if(i)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+ for(const r of rows){const tr=el('tr');r.forEach((c,i)=>{const td=c instanceof Node?(()=>{const d=el('td');d.append(c);return d})():el('td',c==null?'-':String(c));if(i)td.classList.add('n');tr.append(td)});tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+function show(j){const a=j.analysis,o=$('out');o.replaceChildren();
+ if(a.message&&!(a.totals)){o.append(el('p',a.message,'mut'));return}
+ const t=a.totals,r=a.risk;
+ const st=el('div',null,'stats');st.append(stat('Value',money(t.value),t.priced+' of '+t.of+' positions priced'),stat('Profit / loss',t.pnl==null?'-':money(t.pnl),t.pnl==null?'enter costs to see it':pc(t.pnl_pct),t.pnl==null?'':cls(t.pnl)),
+  stat('Volatility (1y)',r?r.vol_pct.toFixed(1)+'%':'-',r?'beta '+(r.beta==null?'-':r.beta.toFixed(2))+' vs S&P 500':''),stat('Worst day-type loss',r?r.cvar95_pct.toFixed(1)+'%':'-','average of the worst 5% of days'),
+  stat('Effective positions',r?r.effective_n.toFixed(1):'-','top 3 = '+(r?r.top3_weight_pct.toFixed(0):'-')+'% of value'));o.append(st);
+ if(a.warnings.length){const d=el('div');for(const w of a.warnings){const x=el('div',null,'row');x.style.cssText='display:flex;gap:.6rem;padding:.3rem 0;border-top:1px solid var(--line)';const g=el('span','CHECK','tag');g.style.cssText='background:#3a2a0c;color:#ffb347';x.append(g);if(w.ticker)x.append(tkLink(w.ticker));x.append(el('span',w.text));d.append(x)}o.append(sec('Warnings',d))}
+ o.append(sec('Positions',table(['Stock','Shares','Price','Value','Weight','Profit / loss','Top funds','Pick rank','Insiders (90d)'],a.positions.map(p=>{const s=el('span');s.append(tkLink(p.ticker));
+  return [s,p.shares,p.price==null?(p.note||'-'):'$'+p.price.toFixed(2),money(p.value),p.weight==null?'-':(p.weight*100).toFixed(1)+'%',p.pnl_pct==null?'-':money(p.pnl)+' ('+pc(p.pnl_pct)+')',
+   p.funds?p.funds.holders+' ('+(p.funds.change>0?'+':'')+p.funds.change+')':'-',p.pick_rank?'#'+p.pick_rank:'-',p.insider_net==null?'-':(p.insider_net>=0?'bought ':'sold ')+money(Math.abs(p.insider_net))]}))));
+ if(a.correlated_pairs.length)o.append(sec('Stocks that move together',table(['Pair','Correlation'],a.correlated_pairs.map(p=>[p.a+' / '+p.b,p.corr.toFixed(2)]))));
+ if(a.alternatives.length){const N={current:'Your weights',equal:'Equal weights',inverse_vol:'Inverse volatility',optimized:'Risk-aware optimisation (shrunk, capped, low turnover)'};
+  o.append(sec('Alternative weightings (same stocks, last year)',table(['Weighting','Volatility','Worst 5% of days','Max drawdown','1y return'],a.alternatives.map(x=>[N[x.name],x.vol_pct.toFixed(1)+'%',x.cvar95_pct.toFixed(2)+'%',x.max_drawdown_pct.toFixed(1)+'%',pc(x.ret_1y_pct)])),
+   'In-sample estimates: they show risk, not what will happen. Past return is shown only for context.'));
+  o.append(sec('Trades the optimisation would suggest',table(['Stock','Change in weight','Approx. amount'],a.trades_to_optimized.filter(x=>Math.abs(x.delta_pct)>=1).map(x=>{const s=el('span');s.append(tkLink(x.ticker));return [s,pc(x.delta_pct),money(x.delta_value)]}),
+   ),'Suggestions are mechanical, ignore taxes and fees, and rest on noisy estimates; equal or inverse-volatility weights are the more robust references.'))}
+ o.append(el('p',a.note,'note'))}
+async function load(){try{const j=await api('/api/my-portfolio');$('ta').value=j.positions.map(p=>p.ticker+' '+p.shares+(p.cost==null?'':' '+p.cost)).join('\n');show(j)}catch(e){$('msg').textContent=e.message}}
+$('save').onclick=async()=>{$('msg').textContent='';$('st').textContent='Saving and pricing…';
+ try{const rows=$('ta').value.split(/\n/).map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split(/[\s,;]+/);return {ticker:p[0],shares:p[1],cost:p[2]==null?null:p[2]}});
+  await api('/api/my-portfolio',{positions:rows});await load()}catch(e){$('msg').textContent=e.message}$('st').textContent=''};
+load();
+"""
+
+
+def render_mine():
+    return shell("My portfolio", "mine", _MINE_BODY, _MINE_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)

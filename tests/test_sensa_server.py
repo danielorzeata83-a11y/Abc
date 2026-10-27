@@ -239,7 +239,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
              srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
-             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab(), srv.render_picks(), srv.render_health(), srv.render_brief()]
+             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab(), srv.render_picks(), srv.render_health(), srv.render_brief(), srv.render_mine()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -1079,3 +1079,50 @@ def test_brief_endpoint_and_page():
     assert _perf_req("GET", "/api/brief", perf=None)[0] == 503
     st, body, _ = _perf_req("GET", "/brief")
     assert st == 200 and b"/api/brief" in body and "/brief" in srv.render_alerts()
+
+
+class FakeMine:
+    def __init__(self):
+        self.saved = None
+
+    def positions(self):
+        return [{"ticker": "AAA", "shares": 10.0, "cost": 5.0}]
+
+    def get(self):
+        return {"positions": [{"ticker": "AAA"}], "warnings": [], "totals": {"value": 100.0}}
+
+    def set(self, raw):
+        if raw == "bad":
+            raise ValueError("invalid position")
+        self.saved = raw
+        return raw
+
+
+def _mine(method, path, body=None, perf="default", headers=None):
+    p = FakePerf() if perf == "default" else perf
+    if p is not None and not hasattr(p, "mine"):
+        p.mine = FakeMine()
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], perf=p)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        h = {"Content-Type": "application/json"} if method == "POST" else {}
+        h.update(headers or {})
+        c.request(method, path, body=json.dumps(body or {}).encode() if method == "POST" else None, headers=h)
+        r = c.getresponse()
+        return r.status, r.read(), p
+    finally:
+        server.shutdown()
+
+
+def test_my_portfolio_endpoints_and_page():
+    st, body, _ = _mine("GET", "/api/my-portfolio")
+    j = json.loads(body)
+    assert st == 200 and j["analysis"]["totals"]["value"] == 100.0 and j["positions"][0]["ticker"] == "AAA"
+    st, body, p = _mine("POST", "/api/my-portfolio", {"positions": [{"ticker": "AAA", "shares": 1}]})
+    assert st == 200 and p.mine.saved == [{"ticker": "AAA", "shares": 1}]
+    assert _mine("POST", "/api/my-portfolio", {"positions": "bad"})[0] == 400
+    assert _mine("POST", "/api/my-portfolio", {}, perf=None)[0] == 503
+    assert _mine("POST", "/api/my-portfolio", {}, headers={"Content-Type": "text/plain"})[0] == 415
+    st, body, _ = _mine("GET", "/my-portfolio")
+    assert st == 200 and b"/api/my-portfolio" in body and "/my-portfolio" in srv.render_alerts()
