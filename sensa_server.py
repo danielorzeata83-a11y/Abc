@@ -26,6 +26,7 @@ from sensa.providers import Cboe, Finnhub, FredApi, YAHOO_RSS, http_fetch, http_
 from sensa.thirteenf import Figi, ThirteenF
 from sensa.watch import Watcher
 from sensa.yahoo_chart import YahooChart
+from sensa.throttle import ThrottledFetch
 from sensa.darkpool import DarkPool
 from sensa.insiders import InsiderService
 from sensa.investors import InvestorService, UnknownTicker
@@ -35,6 +36,7 @@ from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dar
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
+YAHOO = ThrottledFetch(http_fetch)       # one shared pace for every Yahoo chart request (background jobs run in parallel)
 _SYM = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 _CIK = re.compile(r"^[0-9]{1,10}$")
 _ACC18 = re.compile(r"^[0-9]{18}$")
@@ -676,7 +678,7 @@ def build_hub():
     return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
                edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch),
                candles_fn=make_candles_fn(data_dir, AlphaVantageDailyProvider(av) if av else None, secret=av,
-                                          yahoo=YahooChart(http_fetch)),
+                                          yahoo=YahooChart(YAHOO)),
                thirteenf=ThirteenF(sec, http_fetch) if sec else None, figi=figi, company_fn=company_fn, fundamentals_fn=fundamentals_fn,
                cache_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f"))
 
@@ -791,7 +793,7 @@ def build_perf(smart, insiders, politicians, watcher=None):
     from sensa.prices import PriceBook
     from sensa.universe import load_overview
     d = smart.data_dir
-    yc = YahooChart(http_fetch)
+    yc = YahooChart(YAHOO)
     prices = PriceBook(lambda t: yc.candles(t, "1day"), cache_path=os.path.join(d, "prices.json"), retries=2, backoff=1.0)
     portfolio = PortfolioService(os.path.join(d, "holders.db"), os.path.join(d, "live13f.db"), smart.figi, prices)
     jobs = {"funds": PerfJob("pricing the top funds' portfolios", lambda: funds_board(load_overview(d), portfolio),
@@ -831,7 +833,7 @@ def build_lab(smart, insiders, watchlist):
         return None
     from sensa.lab_service import LabService
     from sensa.universe import load_overview
-    yc = YahooChart(http_fetch)
+    yc = YahooChart(YAHOO)
 
     def overview():
         try:
@@ -862,7 +864,7 @@ def build_health(hub, smart, insiders, politicians, live, perf, lab):
         return timed(lambda: f"SPY ${hub.cboe.quote('SPY')['price']}")
 
     def yahoo():
-        return timed(lambda: f"{len(YahooChart(http_fetch).candles('SPY', '1day'))} daily bars")
+        return timed(lambda: f"{len(YahooChart(YAHOO).candles('SPY', '1day'))} daily bars")
 
     def sec():
         return timed(lambda: f"{len(http_fetch('https://data.sec.gov/submissions/CIK0001067983.json', ua)) // 1024} kB")
