@@ -239,7 +239,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
              srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
-             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab(), srv.render_picks()]
+             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab(), srv.render_picks(), srv.render_health()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -1036,3 +1036,29 @@ def test_picks_page_is_served_wired_to_the_performance_api_and_linked_from_the_n
     assert "/picks" in srv.render_alerts()
     st, body, _ = _perf_req("GET", "/picks")
     assert st == 200 and b"perfView('picks'" in body
+
+
+class FakeHealth:
+    def report(self):
+        return {"rows": [{"name": "Yahoo", "kind": "source", "status": "ok", "detail": "200", "updated": None}],
+                "summary": {"ok": 1, "error": 0, "running": 0, "idle": 0}, "keys": {"FRED_API_KEY": True}}
+
+
+def test_health_endpoint_and_page():
+    def go(path, health="default"):
+        h = FakeHealth() if health == "default" else health
+        server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], health=h)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+            c.request("GET", path)
+            r = c.getresponse()
+            return r.status, r.read()
+        finally:
+            server.shutdown()
+    st, body = go("/api/health")
+    assert st == 200 and json.loads(body)["rows"][0]["name"] == "Yahoo"
+    assert go("/api/health", health=None)[0] == 503
+    st, body = go("/health")
+    assert st == 200 and b"/api/health" in body and b"Status" in body
+    assert "/health" in srv.render_alerts()

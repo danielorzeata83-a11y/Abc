@@ -11,6 +11,7 @@ Research / visualisation only -- NOT investment advice.
 """
 
 import argparse
+import time
 import json
 import os
 import re
@@ -30,7 +31,7 @@ from sensa.insiders import InsiderService
 from sensa.investors import InvestorService, UnknownTicker
 from sensa.managers import browse
 from sensa.politicians import PoliticiansService
-from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_lab, render_picks, render_stock, render_latest_filings,
+from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_health, render_investors, render_lab, render_picks, render_stock, render_latest_filings,
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -179,7 +180,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None, lab=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None, lab=None, health=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -289,6 +290,15 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._send(404, "not found", "text/plain")
                 else:
                     self._send(200, render_investors(parts[1].upper()), "text/html; charset=utf-8")
+                return
+            if u.path.rstrip("/") == "/health":
+                self._send(200, render_health(), "text/html; charset=utf-8")
+                return
+            if u.path == "/api/health":
+                if health is None:
+                    self._json(503, {"error": "status is not configured"})
+                else:
+                    self._json(200, health.report())
                 return
             if u.path.rstrip("/") == "/picks":
                 self._send(200, render_picks(), "text/html; charset=utf-8")
@@ -602,8 +612,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None, lab=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors, live, perf, lab))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None, lab=None, health=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors, live, perf, lab, health))
 
 
 def build_hub():
@@ -740,6 +750,41 @@ def build_lab(smart, insiders, watchlist):
     return LabService(smart.data_dir, lambda t, years: yc.adjusted(t, years), overview=overview, insiders=insiders, watchlist=watchlist)
 
 
+def build_health(hub, smart, insiders, politicians, live, perf, lab):
+    from sensa.health import HealthService
+    jobs = {}
+    for name, obj in (("Smart Money overview", smart), ("Insider data", insiders), ("House trades", politicians), ("Live 13F reader", live), ("Portfolio lab", lab)):
+        if obj is not None:
+            jobs[name] = obj.status
+    if perf is not None:
+        for k, j in perf.jobs.items():
+            jobs[f"Performance: {k}"] = j.status
+    contact = os.environ.get("SEC_CONTACT", "").strip()
+    ua = {"User-Agent": f"Abc-dashboard-research/1.0 {contact}"}
+
+    def timed(fn):
+        t = time.monotonic()
+        detail = fn()
+        return True, f"{detail} in {int((time.monotonic() - t) * 1000)} ms"
+
+    def cboe():
+        return timed(lambda: f"SPY ${hub.cboe.quote('SPY')['price']}")
+
+    def yahoo():
+        return timed(lambda: f"{len(YahooChart(http_fetch).candles('SPY', '1day'))} daily bars")
+
+    def sec():
+        return timed(lambda: f"{len(http_fetch('https://data.sec.gov/submissions/CIK0001067983.json', ua)) // 1024} kB")
+
+    def figi():
+        return timed(lambda: "mapping " + ("ok" if http_post("https://api.openfigi.com/v3/mapping", [{"idType": "TICKER", "idValue": "AAPL", "exchCode": "US"}]) else "empty"))
+    probes = {"Cboe delayed quotes": cboe, "Yahoo Finance charts": yahoo, "OpenFIGI": figi}
+    if contact:
+        probes["SEC EDGAR"] = sec
+    keys = {k: os.environ.get(k, "") for k in ("SEC_CONTACT", "FRED_API_KEY", "FINNHUB_API_KEY", "ALPHAVANTAGE_API_KEY", "TELEGRAM_TOKEN")}
+    return HealthService(jobs, probes, keys=keys)
+
+
 def build_insiders(contact):
     """Quarterly SEC insider data set (Form 4 open-market trades)."""
     if not contact:
@@ -819,11 +864,12 @@ def main():
     politicians = build_politicians(os.environ.get("SEC_CONTACT", "").strip())
     perf = build_perf(smart, insiders, politicians)
     lab = build_lab(smart, insiders, wl)
+    health = build_health(hub, smart, insiders, politicians, live, perf, lab)
     if a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(politicians, a.smart_hours, threading.Event()), daemon=True).start()
     srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders,
-                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors, live=live, perf=perf, lab=lab)
+                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors, live=live, perf=perf, lab=lab, health=health)
     if insiders is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()

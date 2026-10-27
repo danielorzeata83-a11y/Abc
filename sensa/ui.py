@@ -30,7 +30,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 
 NAV_ITEMS = (("dash", "/", "Dashboard"), ("picks", "/picks", "Picks"), ("smart", "/smart-money", "Smart Money"),
              ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"), ("political", "/political-trades", "Politicians"),
-             ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"))
+             ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"), ("health", "/health", "Status"))
 
 
 LINK_JS = r"""
@@ -1175,3 +1175,36 @@ td .sm{max-width:560px}
 
 def render_picks():
     return shell("Top picks", "picks", _PICKS_BODY, _PICKS_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS + _PICKS_CSS)
+
+
+# ------------------------------------------------------------------ status page
+_HEALTH_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Status</h1>
+ <p class="mut">What is working right now: background jobs and the free data sources behind the pages. Errors here explain empty or stale pages.</p>
+ <div class="stats" id="stats"></div>
+ <section class="card"><h3>Background jobs</h3><div id="jobs" class="mut">Checking…</div></section>
+ <section class="card" style="margin-top:1rem"><h3>Data sources (tiny test request, cached 5 minutes)</h3><div id="src" class="mut">Checking…</div></section>
+ <section class="card" style="margin-top:1rem"><h3>Optional API keys</h3><div id="keys" class="mut"></div><p class="note">Set in the .env file next to run.bat. Only whether a key is set is shown, never the key.</p></section>
+</div>
+"""
+
+_HEALTH_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const COL={ok:'#22c58b',error:'#f0524f',running:'#ffb347',idle:'#8497b5'};
+function rows(list){const t=el('table',null,'t'),h=el('tr');['','Name','Detail','Updated'].forEach(x=>h.append(el('th',x)));const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+ for(const r of list){const tr=el('tr'),d=el('td'),dot=el('span','● '+r.status);dot.style.color=COL[r.status]||'#8497b5';dot.style.fontWeight='700';d.append(dot);
+  tr.append(d,el('td',r.name),el('td',r.detail||'-','mut'),el('td',r.updated?r.updated.replace('T',' ').slice(0,19):'-','mut'));tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+async function load(){try{const j=await (await fetch('/api/health')).json();if(j.error)throw new Error(j.error);
+  $('stats').replaceChildren(...[['Working',j.summary.ok,'ok'],['Errors',j.summary.error,'error'],['Running',j.summary.running,'running'],['Idle',j.summary.idle,'idle']].map(([k,v,c])=>{const d=el('div',null,'card stat');d.append(el('div',k,'k'),el('div',String(v),'v'),el('div',''));d.querySelector('.v').style.color=COL[c];return d}));
+  $('jobs').replaceChildren(rows(j.rows.filter(r=>r.kind==='job')));$('src').replaceChildren(rows(j.rows.filter(r=>r.kind==='source')));
+  $('keys').replaceChildren(...Object.entries(j.keys).map(([k,v])=>{const d=el('div',(v?'✔ ':'✘ ')+k,v?'up':'mut');return d}))}
+ catch(e){$('jobs').textContent=e.message}}
+load();setInterval(load,30000);
+"""
+
+
+def render_health():
+    return shell("Status", "health", _HEALTH_BODY, _HEALTH_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)
