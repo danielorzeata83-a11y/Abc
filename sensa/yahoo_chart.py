@@ -56,6 +56,23 @@ class YahooChart:
                 b["time"] = datetime.fromtimestamp(b["time"] + off, timezone.utc).strftime("%Y-%m-%d")
         return bars
 
+    def adjusted(self, symbol, years=10):
+        """[(YYYY-MM-DD, adjusted close)] over `years` years: dividends and splits are reflected, as total-return work needs."""
+        s = (symbol or "").upper()
+        if not _SYM.match(s):
+            raise ValueError("bad symbol")
+        try:
+            d = json.loads(self.fetch(URL.format(sym=s, range=f"{int(years)}y", interval="1d")))["chart"]
+            res = (d.get("result") or [None])[0]
+            if not res:
+                raise DataUnavailable(str((d.get("error") or {}).get("description") or "no chart data")[:120])
+            adj = res["indicators"]["adjclose"][0]["adjclose"]
+        except (ValueError, KeyError, TypeError, IndexError):
+            raise DataUnavailable("adjusted price data unavailable (unreadable response)") from None
+        off = (res.get("meta") or {}).get("gmtoffset") or 0
+        return [(datetime.fromtimestamp(t + off, timezone.utc).strftime("%Y-%m-%d"), float(c))
+                for t, c in zip(res.get("timestamp") or [], adj) if c is not None]
+
 
 def _four_hour(bars):
     out, day, chunk = [], None, []
