@@ -525,6 +525,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     payload = hub.quote(arg)
                 elif route == "company" and arg:
                     payload = hub.company(arg)
+                elif route == "option-flow" and arg:
+                    payload = hub.option_flow(arg)
                 elif route == "options" and arg:
                     payload = hub.options(arg)
                 elif route == "short-volume" and arg:

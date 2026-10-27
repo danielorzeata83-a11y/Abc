@@ -425,3 +425,20 @@ def test_company_comes_from_the_injected_source_or_is_none():
     hub = Hub(FakeCboe(), lambda s: [], lambda: None, company_fn=lambda t: {"ticker": t, "name": "X"})
     assert hub.company("aaa") == {"ticker": "AAA", "name": "X"}
     assert make().company("AAA") is None
+
+
+def test_option_flow_uses_the_full_chain_caches_it_and_is_none_without_options():
+    class C(FakeCboe):
+        calls = 0
+
+        def chain(self, sym):
+            C.calls += 1
+            return 100.0, [{"option_type": "call", "strike": 100.0, "expiration": "2026-10-30", "volume": 10, "open_interest": 100, "iv": 0.3, "delta": 0.5, "bid": 1.0, "ask": 1.1, "gamma": 0.1}]
+    hub = make(cboe=C())
+    f = hub.option_flow("aaa")
+    assert f["call_volume"] == 10 and hub.option_flow("AAA")["call_volume"] == 10 and C.calls == 1
+
+    class Empty(FakeCboe):
+        def chain(self, sym):
+            return 100.0, []
+    assert make(cboe=Empty()).option_flow("X") is None

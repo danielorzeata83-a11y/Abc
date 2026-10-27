@@ -932,6 +932,7 @@ _STOCK_BODY = r"""
   </div>
   <div class="col">
    <section class="card" id="optc"><h3>Options overview</h3><div id="opts" class="mut">Loading…</div></section>
+   <section class="card" id="flowc"><h3>Options flow</h3><div id="flow" class="mut">Loading…</div></section>
    <section class="card"><h3>Analyst consensus</h3><div id="analyst" class="mut">Loading…</div></section>
    <section class="card" id="instc"><h3>Top institutional holders</h3><div id="inst" class="mut">Matching the ticker to its 13F security… the first visit to a stock can take up to a minute.</div></section>
    <section class="card" id="darkc"><h3>Dark pool (ATS)</h3><div id="dark" class="mut">Loading…</div></section>
@@ -990,6 +991,13 @@ bars();
 (async()=>{const b=$('opts');try{const o=await api('/api/options/'+T);if(!o)return none(b,'No listed options');const c=o.cp;const m=x=>(x/1e6).toFixed(1)+'M';
  b.replaceChildren(kv([['Expiration',o.expiration+(o.zero_dte?' (0DTE)':'')],['Spot',px(o.spot)],['Net GEX per 1%',m(o.gex.net_gex),cls(o.gex.net_gex)],['Call GEX',m(o.gex.call_gex)],['Put GEX',m(o.gex.put_gex)],
   ['Call volume',num(c.call_volume)],['Put volume',num(c.put_volume)],['Put/Call volume',c.volume_ratio==null?'-':String(c.volume_ratio)],['Call/Put open int.',c.oi_ratio==null?'-':String(c.oi_ratio)],['Contracts',String(o.chain.length)]]))}catch(e){none(b,'No options data for this symbol (not optionable, or the feed is unavailable).')}})();
+(async()=>{const b=$('flow');try{const f=await api('/api/option-flow/'+T);if(!f)return none(b,'No listed options');const d=el('div');
+ for(const x of f.signals)d.append(el('div',x,'sm'));
+ if(f.term.length){d.append(el('div','Implied volatility at the money',null));d.lastChild.style.cssText='margin-top:.6rem;font-weight:600';
+  d.append(table(['Expiry','Days','IV'],f.term.map(t=>[t.expiration,String(t.dte),t.atm_iv_pct.toFixed(1)+'%']),[1,2]))}
+ if(f.unusual.length){d.append(el('div','Unusual contracts (volume far above open interest)'));d.lastChild.style.cssText='margin-top:.6rem;font-weight:600';
+  d.append(table(['Contract','Volume','Open int.','Premium'],f.unusual.map(u=>[u.expiration+' '+u.strike+' '+u.type,num(u.volume),num(u.open_interest),money(u.premium)]),[1,2,3]))}
+ b.replaceChildren(d)}catch(e){none(b,'No options flow available for this symbol.')}})();
 (async()=>{const b=$('analyst');try{const a=await api('/api/analyst/'+T);if(!a)return none(b,'No analyst coverage (or FINNHUB_API_KEY is not set).');const tot=a.buy+a.hold+a.sell||1,bar=el('div');bar.style.cssText='display:flex;height:10px;border-radius:5px;overflow:hidden;margin:.5rem 0';
  for(const [n,c] of [[a.buy,'var(--up)'],[a.hold,'var(--mut)'],[a.sell,'var(--dn)']]){const d=el('div');d.style.cssText='width:'+n/tot*100+'%;background:'+c;bar.append(d)}
  b.replaceChildren(el('div',a.verdict,'v '+(a.verdict==='Buy'?'up':a.verdict==='Sell'?'dn':'mut')),bar,el('div','Buy '+a.buy+' · Hold '+a.hold+' · Sell '+a.sell+' ('+a.period+')','mut sm'))}catch(e){fail(b,e)}})();

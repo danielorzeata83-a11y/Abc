@@ -1126,3 +1126,23 @@ def test_my_portfolio_endpoints_and_page():
     assert _mine("POST", "/api/my-portfolio", {}, headers={"Content-Type": "text/plain"})[0] == 415
     st, body, _ = _mine("GET", "/my-portfolio")
     assert st == 200 and b"/api/my-portfolio" in body and "/my-portfolio" in srv.render_alerts()
+
+
+def test_option_flow_endpoint_and_stock_page_card():
+    class H(FakeHub):
+        def option_flow(self, s):
+            return {"signals": ["Put/call volume ratio 0.50"], "unusual": []} if s != "NONE" else None
+    def go(path):
+        server = srv.make_server(H(), "127.0.0.1", 0, ["AAA"])
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+            c.request("GET", path)
+            r = c.getresponse()
+            return r.status, r.read()
+        finally:
+            server.shutdown()
+    st, body = go("/api/option-flow/aapl")
+    assert st == 200 and json.loads(body)["signals"][0].startswith("Put/call")
+    assert go("/api/option-flow/NONE")[1].strip() == b"null"
+    assert "/api/option-flow/" in srv.render_stock("AAPL") and "Options flow" in srv.render_stock("AAPL")

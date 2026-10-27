@@ -88,6 +88,15 @@ class Hub:
                     "chain": near}
         return self._cached(("o", s), load)
 
+    def option_flow(self, symbol):
+        from sensa.option_flow import option_flow
+        s = symbol.upper()
+
+        def load():
+            spot, chain = self.cboe.chain(s)
+            return option_flow(spot, chain, self.today()) if chain else None
+        return self._cached(("of", s), load)
+
     def insiders(self, symbol=None, limit=10):
         if self.edgar is None:
             raise DataUnavailable("EDGAR not configured (set SEC_CONTACT)")
