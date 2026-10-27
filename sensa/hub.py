@@ -126,6 +126,11 @@ class Hub:
             self._cache[key + ("err",)] = (self.clock(), str(e))
             raise
 
+    def indicators(self, symbol, tf, anchor=None):
+        """Chart indicators for the same bars the chart draws (VWAP can be anchored at a bar time)."""
+        from sensa.indicators import compute
+        return compute(self.candles(symbol, tf), anchor=anchor)
+
     # ---- 13F institutional managers (SEC filings never change once filed) ----
     def _prefetch(self, cik, filings):
         """Download several filings in parallel (SEC allows <=10 requests/s; this stays under)."""

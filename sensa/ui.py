@@ -30,7 +30,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 
 NAV_ITEMS = (("dash", "/", "Dashboard"), ("picks", "/picks", "Picks"), ("brief", "/brief", "Brief"), ("mine", "/my-portfolio", "My portfolio"), ("smart", "/smart-money", "Smart Money"),
              ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"), ("political", "/political-trades", "Politicians"),
-             ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"), ("health", "/health", "Status"))
+             ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"), ("value", "/valuation", "Value"), ("health", "/health", "Status"))
 
 
 LINK_JS = r"""
@@ -910,6 +910,9 @@ _STOCK_CSS = r"""
 .kv{display:grid;grid-template-columns:1fr auto;gap:.15rem .8rem}.kv span:nth-child(odd){color:var(--mut)}.kv span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
 .news a{color:var(--fg)}.news li{margin:.5rem 0;list-style:none}.news ul{padding:0;margin:0}
 .tf{background:var(--card2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:.15rem .6rem;margin-right:4px;cursor:pointer}.tf.on{border-color:var(--acc);color:var(--acc)}
+.chartbar{position:relative;display:flex;gap:.3rem;align-items:center;flex-wrap:wrap}
+.indmenu{position:absolute;right:0;top:2rem;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.6rem .8rem;min-width:260px;box-shadow:0 8px 24px #0008}
+.indmenu[hidden]{display:none}.indrow{display:flex;gap:.5rem;align-items:center;padding:.12rem 0;cursor:pointer;font-size:.85rem}
 .sm{font-size:.82rem}.sm td,.sm th{padding:.3rem .4rem}
 .grid{grid-template-columns:minmax(0,1.5fr) minmax(380px,1fr)}@media(max-width:1000px){.grid{grid-template-columns:1fr}}
 """
@@ -925,13 +928,14 @@ _STOCK_BODY = r"""
  <div class="stats" id="stats"></div>
  <div class="grid">
   <div class="col">
-   <section class="card" id="chartc"><div class="head"><h3>Chart</h3><div id="tfs"></div></div><div id="chart" style="height:340px"></div><div id="chartmsg"></div></section>
+   <section class="card" id="chartc"><div class="head"><h3>Chart</h3><div class="chartbar"><div id="tfs"></div><button class="tf" id="indbtn" type="button">Indicators ▾</button><div id="indmenu" class="indmenu" hidden></div></div></div><div id="chart" style="height:380px"></div><div id="subcharts"></div><div id="chartmsg"></div></section>
    <section class="card news" id="newsc"><h3>News</h3><div id="news" class="mut">Loading…</div></section>
    <section class="card" id="insc"><h3>Insider trades</h3><div id="ins" class="mut">Loading…</div></section>
    <section class="card" id="polc"><h3>Politicians (US House)</h3><div id="pol" class="mut">Loading…</div></section>
   </div>
   <div class="col">
    <section class="card" id="optc"><h3>Options overview</h3><div id="opts" class="mut">Loading…</div></section>
+   <section class="card" id="thermc"><h3>Valuation thermometer</h3><div id="therm" class="mut">Loading…</div></section>
    <section class="card" id="fundc"><h3>Valuation and quality</h3><div id="fund" class="mut">Loading…</div></section>
    <section class="card" id="flowc"><h3>Options flow</h3><div id="flow" class="mut">Loading…</div></section>
    <section class="card"><h3>Analyst consensus</h3><div id="analyst" class="mut">Loading…</div></section>
@@ -978,20 +982,84 @@ function stat(k,v,d){const c=el('div',null,'card stat');c.append(el('div',k,'k')
 (async()=>{try{C=await api('/api/company/'+T);if(C){document.title=T+' - '+C.name;
   $('co').replaceChildren(el('span',C.name),el('span',' · '+C.exchange+(C.industry?' · '+C.industry:''),'mut'));drawQuote()}else $('co').textContent='No SEC company record (ETF, fund or foreign issuer)'}
  catch(e){$('co').textContent=''}})();
-let chart,cs,vs,tf='1day';
-function initChart(){if(chart||!window.LightweightCharts)return;
- chart=LightweightCharts.createChart($('chart'),{autoSize:true,layout:{background:{color:'#0a1527'},textColor:'#e8eefb'},grid:{vertLines:{color:'#16263f'},horzLines:{color:'#16263f'}},timeScale:{timeVisible:true}});
- cs=chart.addCandlestickSeries();vs=chart.addHistogramSeries({priceScaleId:'',priceFormat:{type:'volume'},color:'#58a6ff55'});vs.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}})}
-async function bars(){const m=$('chartmsg');m.textContent='';initChart();if(!chart){m.append(el('div','chart library failed to load','err'));return}
- try{const r=await api('/api/bars/'+T+'?tf='+tf);cs.setData(r.map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close})));vs.setData(r.map(b=>({time:b.time,value:b.volume})));chart.timeScale().fitContent()}
- catch(e){cs.setData([]);vs.setData([]);fail(m,e)}}
-for(const t of ['15m','1h','4h','1day']){const b=el('button',t,'tf'+(t===tf?' on':''));b.onclick=()=>{tf=t;document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('on',x===b));bars()};$('tfs').append(b)}
-bars();
+const OV=[
+ ['vwap','VWAP',[['vwap','#ff9f1a',2,0]]],
+ ['vbands','VWAP bands (±1σ, ±2σ)',[['vwap_upper1','#ff9f1a99',1,2],['vwap_lower1','#ff9f1a99',1,2],['vwap_upper2','#ff9f1a55',1,1],['vwap_lower2','#ff9f1a55',1,1]]],
+ ['cloud','EMA cloud (8 / 21)',[['cloud_fast','#3fb950',1,0],['cloud_slow','#f85149',1,0]]],
+ ['vwma','VWMA 20 (volume-weighted MA)',[['vwma20','#22d3ee',2,0]]],
+ ['vwema','VWEMA 20 (volume-weighted EMA)',[['vwema20','#c084fc',2,0]]],
+ ['ema9','EMA 9',[['ema9','#facc15',1,0]]],['ema21','EMA 21',[['ema21','#fb923c',1,0]]],
+ ['sma20','SMA 20',[['sma20','#60a5fa',1,0]]],['sma50','SMA 50',[['sma50','#a78bfa',1,0]]],['sma200','SMA 200',[['sma200','#f472b6',2,0]]],
+ ['bb','Bollinger bands (20, 2)',[['bb_upper','#94a3b8',1,2],['bb_mid','#94a3b866',1,0],['bb_lower','#94a3b8',1,2]]]];
+const PN=[['rsi','RSI (14)'],['macd','MACD (12, 26, 9)'],['vmom','VWAP momentum (% from VWAP)']];
+const IND_KEY='sm_ind';
+function loadSel(){try{const s=JSON.parse(localStorage.getItem(IND_KEY)||'null');if(s&&Array.isArray(s.on))return new Set(s.on)}catch(e){}return new Set(['vwap','cloud'])}
+function saveSel(){try{localStorage.setItem(IND_KEY,JSON.stringify({on:[...sel]}))}catch(e){}}
+let chart,cs,vs,tf='1day',sel=loadSel(),anchor=null,anchoring=false,B=[],ID=null,subs=[],unsync=null;
+const BG='#0a1527',COPT={autoSize:true,layout:{background:{color:BG},textColor:'#e8eefb'},grid:{vertLines:{color:'#16263f'},horzLines:{color:'#16263f'}},rightPriceScale:{minimumWidth:72},timeScale:{timeVisible:true}};
+function buildMenu(){const m=$('indmenu');m.replaceChildren();
+ const sec=t=>{const h=el('div',t,'mut sm');h.style.cssText='margin:.4rem 0 .15rem;text-transform:uppercase;letter-spacing:.05em;font-size:.7rem';m.append(h)};
+ const row=(k,label)=>{const l=el('label',null,'indrow'),c=document.createElement('input');c.type='checkbox';c.checked=sel.has(k);
+  c.onchange=()=>{c.checked?sel.add(k):sel.delete(k);saveSel();render()};l.append(c,el('span',label));m.append(l)};
+ sec('On the chart');OV.forEach(o=>row(o[0],o[1]));sec('Panes below');PN.forEach(p=>row(p[0],p[1]));
+ sec('VWAP anchor');const a=el('label',null,'indrow'),c=document.createElement('input');c.type='checkbox';c.checked=anchoring;
+ c.onchange=()=>{anchoring=c.checked;$('chartmsg').replaceChildren(anchoring?el('div','Click a bar to anchor VWAP there.','mut sm'):'')};a.append(c,el('span','Anchor by clicking a bar'));m.append(a);
+ const r=el('button','Reset anchor','tf');r.onclick=()=>{anchor=null;anchoring=false;buildMenu();load()};m.append(r);
+ m.append(el('div','Default: each trading day (intraday) or the year start (1day).','mut sm'))}
+$('indbtn').onclick=e=>{e.stopPropagation();const m=$('indmenu');m.hidden=!m.hidden};
+document.addEventListener('click',e=>{const m=$('indmenu');if(!m.hidden&&!m.contains(e.target))m.hidden=true});
+function sdata(k){return (ID&&ID[k])||[]}
+function lineOpts(c,w,st){return {color:c,lineWidth:w,lineStyle:st,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false}}
+function cloudData(){const f=sdata('cloud_fast'),s=new Map(sdata('cloud_slow').map(p=>[p.time,p.value])),up=[],dn=[];
+ for(const p of f){const sv=s.get(p.time);if(sv==null)continue;const bull=p.value>=sv,col=bull?'rgba(63,185,80,0.22)':'rgba(248,81,73,0.22)';
+  up.push({time:p.time,value:Math.max(p.value,sv),lineColor:'rgba(0,0,0,0)',topColor:col,bottomColor:col});
+  dn.push({time:p.time,value:Math.min(p.value,sv),lineColor:'rgba(0,0,0,0)',topColor:BG,bottomColor:BG})}
+ return [up,dn]}
+function dropSubs(){if(unsync){unsync();unsync=null}subs.forEach(s=>s.remove());subs=[];$('subcharts').replaceChildren()}
+function subChart(label,height){const w=el('div'),t=el('div',label,'mut sm');t.style.cssText='margin:.5rem 0 .1rem';const d=el('div');d.style.height=height+'px';w.append(t,d);$('subcharts').append(w);
+ const c=LightweightCharts.createChart(d,COPT);subs.push(c);return c}
+function render(){if(!window.LightweightCharts)return;
+ if(chart){chart.remove();chart=null}dropSubs();
+ chart=LightweightCharts.createChart($('chart'),COPT);
+ if(sel.has('cloud')&&ID){const [u,d]=cloudData();const a=chart.addAreaSeries({priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,lineWidth:1}),b=chart.addAreaSeries({priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,lineWidth:1});a.setData(u);b.setData(d)}
+ cs=chart.addCandlestickSeries();vs=chart.addHistogramSeries({priceScaleId:'',priceFormat:{type:'volume'},color:'#58a6ff55'});vs.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
+ cs.setData(B.map(b=>({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close})));vs.setData(B.map(b=>({time:b.time,value:b.volume})));
+ if(ID)for(const [k,,lines] of OV){if(!sel.has(k))continue;for(const [name,col,w,st] of lines){chart.addLineSeries(lineOpts(col,w,st)).setData(sdata(name))}}
+ chart.subscribeClick(p=>{if(anchoring&&p.time!=null){anchor=p.time;anchoring=false;buildMenu();load()}});
+ if(ID){
+  if(sel.has('rsi')){const c=subChart('RSI (14)',110),s=c.addLineSeries(lineOpts('#22d3ee',2,0));s.setData(sdata('rsi14'));
+   for(const lv of [30,70])s.createPriceLine({price:lv,color:'#64748b',lineWidth:1,lineStyle:2,axisLabelVisible:false})}
+  if(sel.has('macd')){const c=subChart('MACD (12, 26, 9)',120),h=c.addHistogramSeries({priceLineVisible:false,lastValueVisible:false});
+   h.setData(sdata('macd_hist').map(p=>({time:p.time,value:p.value,color:p.value>=0?'#3fb95099':'#f8514999'})));
+   c.addLineSeries(lineOpts('#60a5fa',1,0)).setData(sdata('macd'));c.addLineSeries(lineOpts('#fb923c',1,0)).setData(sdata('macd_signal'))}
+  if(sel.has('vmom')){const c=subChart('VWAP momentum (% from VWAP)',110),h=c.addHistogramSeries({priceLineVisible:false,lastValueVisible:false});
+   h.setData(sdata('vwap_momentum').map(p=>({time:p.time,value:p.value,color:p.value>=0?'#3fb950':'#f85149'})))}
+ }
+ if(subs.length){const ts=chart.timeScale(),f=r=>{if(r)subs.forEach(c=>c.timeScale().setVisibleLogicalRange(r))};ts.subscribeVisibleLogicalRangeChange(f);unsync=()=>{try{ts.unsubscribeVisibleLogicalRangeChange(f)}catch(e){}}}
+ chart.timeScale().fitContent()}
+async function load(){const m=$('chartmsg');if(!anchoring)m.textContent='';
+ if(!window.LightweightCharts){m.append(el('div','chart library failed to load','err'));return}
+ try{B=await api('/api/bars/'+T+'?tf='+tf)}catch(e){B=[];ID=null;render();fail(m,e);return}
+ try{ID=await api('/api/indicators/'+T+'?tf='+tf+(anchor!=null?'&anchor='+encodeURIComponent(anchor):''))}catch(e){ID=null;m.append(el('div','Indicators unavailable: '+e.message,'err'))}
+ render()}
+for(const t of ['15m','1h','4h','1day']){const b=el('button',t,'tf'+(t===tf?' on':''));b.onclick=()=>{tf=t;anchor=null;document.querySelectorAll('#tfs .tf').forEach(x=>x.classList.toggle('on',x===b));load()};$('tfs').append(b)}
+buildMenu();load();
 (async()=>{const b=$('news');try{const n=await api('/api/news/'+T);if(!n.length)return none(b,'No recent headlines');const u=el('ul');
  for(const x of n){const li=el('li'),h=safeUrl(x.url),a=el('a',x.headline);if(h){a.href=h;a.target='_blank';a.rel='noopener noreferrer'}li.append(a,el('div',(x.source||'')+(x.datetime?' · '+x.datetime.slice(0,22):''),'mut sm'));u.append(li)}b.replaceChildren(u)}catch(e){fail(b,e)}})();
 (async()=>{const b=$('opts');try{const o=await api('/api/options/'+T);if(!o)return none(b,'No listed options');const c=o.cp;const m=x=>(x/1e6).toFixed(1)+'M';
  b.replaceChildren(kv([['Expiration',o.expiration+(o.zero_dte?' (0DTE)':'')],['Spot',px(o.spot)],['Net GEX per 1%',m(o.gex.net_gex),cls(o.gex.net_gex)],['Call GEX',m(o.gex.call_gex)],['Put GEX',m(o.gex.put_gex)],
   ['Call volume',num(c.call_volume)],['Put volume',num(c.put_volume)],['Put/Call volume',c.volume_ratio==null?'-':String(c.volume_ratio)],['Call/Put open int.',c.oi_ratio==null?'-':String(c.oi_ratio)],['Contracts',String(o.chain.length)]]))}catch(e){none(b,'No options data for this symbol (not optionable, or the feed is unavailable).')}})();
+(async()=>{const b=$('therm');try{const t=await api('/api/valuation/'+T);if(!t)return none(b,'Not enough data for a thermometer (the reference snapshot covers the S&P 500; other stocks need SEC earnings data).');
+ const sc=t.score,col=t.label==='cheap'?'var(--up)':t.label==='expensive'?'var(--dn)':'#d4a72c';
+ const bar=el('div');bar.style.cssText='position:relative;height:14px;border-radius:7px;margin:.7rem 0 .3rem;background:linear-gradient(90deg,var(--dn),#d4a72c 50%,var(--up))';
+ if(sc!=null){const k=el('div');k.style.cssText='position:absolute;top:-4px;width:4px;height:22px;background:#fff;border-radius:2px;left:calc('+Math.min(98,Math.max(1,sc))+'% - 2px)';bar.append(k)}
+ const ends=el('div',null,'mut sm');ends.style.cssText='display:flex;justify-content:space-between';ends.append(el('span','pricey'),el('span','cheap'));
+ const head=el('div',sc==null?'n/a':(t.label==='cheap'?'Cheap':t.label==='expensive'?'Expensive':'Fairly priced')+' · '+sc+'/100',null);head.style.cssText='font-size:1.25rem;font-weight:700;color:'+col;
+ const d=el('div');d.append(head,el('div',t.sector?'against '+t.sector+' peers in the S&P 500':'against the whole S&P 500 (no sector peers known)','mut sm'),bar,ends);
+ d.append(table(['Ratio','Value','Sector median','Cheaper than'],t.ratios.map(r=>[r.name,r.value==null?'-':String(r.value),r.sector_median==null?'-':String(r.sector_median),r.cheaper_than_sector_pct==null?'-':r.cheaper_than_sector_pct+'% of peers']),[1,2,3]));
+ if(t.quadrant){const q=el('div','Value + quality: '+t.quadrant+(t.quality_pct!=null?' (quality '+t.quality_pct+'%)':''),'sm');q.style.marginTop='.5rem';d.append(q)}
+ const n=el('div',(t.live_pe!=null?'P/E uses the live price and SEC earnings ('+t.live_pe+'); ':'')+'P/B and P/S come from a reference snapshot, so they can be dated. Cheap is not a buy signal: low-quality businesses are cheap for a reason. ','mut sm');n.style.marginTop='.5rem';n.append(link('Value + quality screener →','/valuation'));d.append(n);
+ b.replaceChildren(d)}catch(e){fail(b,e)}})();
 (async()=>{const b=$('fund');try{const f=await api('/api/fundamentals/'+T);if(!f)return none(b,'No SEC financial data (ETFs, funds and many foreign issuers do not file it).');
  const p=v=>v==null?'-':v.toFixed(1)+'%';
  b.replaceChildren(kv([['P/E (last 12 months)',f.pe==null?(f.eps_ttm!=null&&f.eps_ttm<=0?'not profitable':'-'):f.pe.toFixed(1)],['Earnings yield',p(f.earnings_yield_pct)],['Revenue (12 months)',money(f.revenue_ttm)],
@@ -1337,3 +1405,40 @@ load();
 
 def render_mine():
     return shell("My portfolio", "mine", _MINE_BODY, _MINE_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)
+
+
+# ------------------------------------------------------------------ value + quality screener
+_VAL_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Value + quality screener</h1>
+ <p class="mut">Cheap is only good if the business is sound. <b>Cheap + quality</b> = candidate; <b>cheap + low quality</b> = value-trap risk.
+ Value: how cheap P/E, P/B and P/S are against sector peers. Quality: EBITDA margin against sector peers (return on equity for banks).
+ Reference snapshot of the S&amp;P 500 - context for your own judgement, not a buy signal and not investment advice. Click a ticker for its page and thermometer.</p>
+ <div id="msg" class="err"></div><div id="tabs" style="margin:.6rem 0"></div>
+ <section class="card"><div class="tbl"><table class="t sm"><thead><tr><th>Ticker</th><th>Sector</th><th class="n">P/E</th><th class="n">P/B</th><th class="n">P/S</th><th class="n">EBITDA mg</th><th class="n">Div</th><th class="n">Value %</th><th class="n">Quality %</th><th>Quadrant</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+</div>
+"""
+
+_VAL_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const QS=['CHEAP + QUALITY','CHEAP but LOW QUALITY (trap risk)','QUALITY but PRICEY','EXPENSIVE + LOW QUALITY (avoid)'];
+const QC={'CHEAP + QUALITY':'var(--up)','CHEAP but LOW QUALITY (trap risk)':'var(--dn)','QUALITY but PRICEY':'#d4a72c','EXPENSIVE + LOW QUALITY (avoid)':'var(--mut)'};
+let quad='';
+const f=(v,s)=>v==null?'-':v+(s||'');
+async function load(){try{const r=await fetch('/api/valuation-screen?limit=120'+(quad?'&quadrant='+encodeURIComponent(quad):'')),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);
+  const tabs=$('tabs');tabs.replaceChildren();
+  const mk=(q,label)=>{const b=el('button',label,'btn'+(quad===q?' on':''));b.style.marginRight='.4rem';b.onclick=()=>{quad=q;load()};tabs.append(b)};
+  mk('','All ('+j.total+')');QS.forEach(q=>mk(q,q+' ('+(j.counts[q]||0)+')'));
+  if(!j.total){$('rows').replaceChildren();$('msg').textContent='The fundamentals snapshot (ci_data/sp500_financials.csv) is missing.';return}
+  $('msg').textContent='';
+  $('rows').replaceChildren(...j.rows.map(x=>{const tr=el('tr');const t=el('td');t.append(tkLink(x.ticker));
+   const q=el('td',x.quadrant);q.style.color=QC[x.quadrant]||'var(--mut)';
+   tr.append(t,el('td',x.sector),...[f(x.pe),f(x.pb),f(x.ps),f(x.ebitda_margin_pct,'%'),f(x.dividend_pct,'%'),f(x.value_pct),f(x.quality_pct)].map(v=>el('td',v,'n')),q);return tr}))}
+ catch(e){$('msg').textContent=e.message}}
+load();
+"""
+
+
+def render_valuation():
+    return shell("Value + quality", "value", _VAL_BODY, _VAL_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)

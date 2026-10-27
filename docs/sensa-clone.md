@@ -250,3 +250,13 @@ python -m pytest tests -k sensa
 (all `not_proven`, none with t >= 2 in the positive direction). Fund-based signals (top funds buying, active flow)
 had slightly *negative* rank correlation over 21 days (t about -2); momentum, quality and insider net buying were
 mildly positive over 63 days (t 1.1-1.5), not significant. Universe is survivorship-biased, so even these are flattered.
+
+### Chart indicators and valuation
+
+- **Chart (stock page):** the *Indicators* menu toggles VWAP (daily reset intraday, year start on 1day, or anchored by clicking a bar),
+  VWAP bands (±1σ, ±2σ), EMA cloud (8/21), VWMA 20, VWEMA 20, EMA 9/21, SMA 20/50/200, Bollinger, and panes for RSI, MACD and
+  VWAP momentum. Computed in `sensa/indicators.py`, served by `/api/indicators/<T>?tf=&anchor=`; the choice is remembered in the browser.
+- **Valuation thermometer (stock page):** 0-100 (100 = cheapest) from P/E, P/B and P/S against sector peers in the S&P 500 snapshot
+  (`ci_data/sp500_financials.csv`); the P/E uses the live price and SEC earnings. `/api/valuation/<T>`.
+- **Value + quality screener:** `/valuation` (`sensa/valuation.py`, built on `markov/screener.py`). The snapshot is a point in time:
+  context for judgement, not a buy signal.

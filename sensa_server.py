@@ -16,6 +16,7 @@ import json
 import os
 
 from sensa.envfile import load_env
+from markov.screener import QUADRANTS
 from sensa.fsutil import ensure_download
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,7 +36,7 @@ from sensa.insiders import InsiderService
 from sensa.investors import InvestorService, UnknownTicker
 from sensa.managers import browse
 from sensa.politicians import PoliticiansService
-from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_brief, render_health, render_investors, render_lab, render_mine, render_picks, render_stock, render_latest_filings,
+from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_brief, render_health, render_investors, render_lab, render_mine, render_picks, render_stock, render_valuation, render_latest_filings,
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -185,6 +186,17 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
+_VAL = []
+
+
+def _valuation():
+    """The S&P 500 fundamentals snapshot (loaded once)."""
+    if not _VAL:
+        from sensa.valuation import Valuation, default_path
+        _VAL.append(Valuation(default_path()))
+    return _VAL[0]
+
+
 def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None, lab=None, health=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
@@ -314,6 +326,18 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                 else:
                     self._json(200, {"latest": perf.brief.latest(),
                                      "history": [{"date": h["date"], "generated": h["generated"], "new_count": h.get("new_count", 0)} for h in perf.brief.history()]})
+                return
+            if u.path.rstrip("/") == "/valuation":
+                self._send(200, render_valuation(), "text/html; charset=utf-8")
+                return
+            if u.path == "/api/valuation-screen":
+                q = parse_qs(u.query)
+                quad = q.get("quadrant", [""])[0] or None
+                lim = q.get("limit", ["80"])[0]
+                if quad is not None and quad not in QUADRANTS:
+                    self._json(400, {"error": "unknown quadrant"})
+                else:
+                    self._json(200, _valuation().screen(quad, max(1, min(int(lim), 500)) if lim.isdigit() else 80))
                 return
             if u.path.rstrip("/") == "/health":
                 self._send(200, render_health(), "text/html; charset=utf-8")
@@ -540,6 +564,19 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     payload = hub.short_volume(arg)
                 elif route == "bars" and arg:
                     payload = hub.candles(arg, parse_qs(u.query).get("tf", ["1h"])[0])
+                elif route == "valuation" and arg:
+                    try:
+                        f = hub.fundamentals(arg)
+                    except Exception:                               # the thermometer still works from the snapshot alone
+                        f = None
+                    payload = _valuation().thermometer(arg, live_pe=(f or {}).get("pe"))
+                    if payload is not None and f and f.get("pe"):
+                        payload["live_pe"] = round(f["pe"], 1)
+                elif route == "indicators" and arg:
+                    q = parse_qs(u.query)
+                    anchor = q.get("anchor", [""])[0]
+                    anchor = int(anchor) if anchor.isdigit() else (anchor if re.fullmatch(r"\d{4}-\d{2}-\d{2}", anchor) else None)
+                    payload = hub.indicators(arg, q.get("tf", ["1h"])[0], anchor)
                 elif route == "sectors":
                     payload = hub.sectors()
                 elif route == "insiders":

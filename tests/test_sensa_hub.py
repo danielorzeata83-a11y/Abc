@@ -453,3 +453,19 @@ def test_fundamentals_use_the_quote_price_and_the_injected_source():
     hub = Hub(FakeCboe(), lambda s: [], lambda: None, fundamentals_fn=fund)
     assert hub.fundamentals("aaa") == {"pe": 55.0} and seen == [("AAA", 110.0)]
     assert make().fundamentals("AAA") is None
+
+
+def test_indicators_are_computed_from_the_cached_candles():
+    calls = []
+
+    def candles(sym, tf):
+        calls.append(1)
+        return [{"time": 1_700_000_000 + i * 900, "open": 10 + i, "high": 11 + i, "low": 9 + i, "close": 10 + i, "volume": 5}
+                for i in range(60)]
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, candles_fn=candles, ttl=60)
+    r = hub.indicators("aaa", "15m")
+    assert r["sma20"] and r["vwap"] and r["rsi14"]
+    hub.indicators("AAA", "15m", anchor=1_700_000_000 + 30 * 900)
+    assert len(calls) == 1
+    a = hub.indicators("AAA", "15m", anchor=1_700_000_000 + 30 * 900)
+    assert a["vwap"][0]["time"] == 1_700_000_000 + 30 * 900

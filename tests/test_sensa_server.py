@@ -1170,3 +1170,44 @@ def test_fundamentals_endpoint_and_stock_page_card():
 def test_picks_page_shows_the_signal_evidence_card():
     html = srv.render_picks()
     assert "Evidence from the past" in html and "weights_source" in html and "too_little_data" in html
+
+
+def _hub_get(path, hub):
+    server = srv.make_server(hub, "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", path)
+        r = c.getresponse()
+        return r.status, r.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_indicators_endpoint_passes_timeframe_and_anchor():
+    calls = []
+
+    class H(FakeHub):
+        def indicators(self, s, tf, anchor=None):
+            calls.append((s, tf, anchor))
+            return {"vwap": []}
+    assert _hub_get("/api/indicators/aaa?tf=15m&anchor=1700000000", H())[0] == 200
+    assert _hub_get("/api/indicators/aaa?tf=1day&anchor=2026-01-05", H())[0] == 200
+    assert _hub_get("/api/indicators/aaa?tf=1day&anchor=junk", H())[0] == 200
+    assert calls == [("AAA", "15m", 1700000000), ("AAA", "1day", "2026-01-05"), ("AAA", "1day", None)]
+
+
+def test_valuation_endpoints_and_page():
+    class H(FakeHub):
+        def fundamentals(self, s):
+            return {"pe": 12.3}
+    st, body = _hub_get("/api/valuation-screen?limit=5", H())
+    j = json.loads(body)
+    assert st == 200 and j["total"] > 100 and len(j["rows"]) == 5
+    assert _hub_get("/api/valuation-screen?quadrant=nope", H())[0] == 400
+    st, body = _hub_get("/api/valuation/AAPL", H())
+    t = json.loads(body)
+    assert st == 200 and t["ticker"] == "AAPL" and t["live_pe"] == 12.3 and t["ratios"][0]["value"] == 12.3
+    st, body = _hub_get("/valuation", H())
+    assert st == 200 and b"Value + quality" in body
