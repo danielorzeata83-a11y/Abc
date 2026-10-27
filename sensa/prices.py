@@ -11,8 +11,9 @@ from markov.data_providers import DataUnavailable
 
 
 class PriceBook:
-    def __init__(self, history_fn, cache_path=None, ttl=6 * 3600, clock=time.time, workers=6):
+    def __init__(self, history_fn, cache_path=None, ttl=6 * 3600, clock=time.time, workers=6, retries=0, backoff=1.0, sleep=time.sleep):
         self.history_fn, self.cache_path, self.ttl, self._clock, self.workers = history_fn, cache_path, ttl, clock, workers
+        self.retries, self.backoff, self._sleep = retries, backoff, sleep
         self._lock = threading.Lock()
         self._data = {}                       # ticker -> (fetched_at, dates, closes) ; failures: (fetched_at, [], [])
         self._dirty = False
@@ -28,11 +29,17 @@ class PriceBook:
         hit = self._data.get(t)
         if hit and self._clock() - hit[0] < self.ttl:
             return hit
-        try:
-            bars = self.history_fn(t)
-            entry = (self._clock(), [b["time"] for b in bars], [float(b["close"]) for b in bars])
-        except (DataUnavailable, ValueError, KeyError):
-            entry = (self._clock(), [], [])
+        entry = (self._clock(), [], [])
+        for attempt in range(self.retries + 1):               # Yahoo throttles bursts: back off before giving up on a ticker
+            try:
+                bars = self.history_fn(t)
+                entry = (self._clock(), [b["time"] for b in bars], [float(b["close"]) for b in bars])
+                break
+            except DataUnavailable:
+                if attempt < self.retries:
+                    self._sleep(self.backoff * (2 ** attempt))
+            except (ValueError, KeyError):
+                break
         with self._lock:
             self._data[t] = entry
             self._dirty = True
@@ -56,6 +63,10 @@ class PriceBook:
         with ThreadPoolExecutor(max_workers=self.workers) as ex:
             list(ex.map(self._load, todo))
         self.save()
+
+    def closes(self, ticker):
+        _, d, c = self._load(ticker.upper())
+        return (list(d), list(c)) if d else None
 
     def last(self, ticker):
         _, d, c = self._load(ticker.upper())

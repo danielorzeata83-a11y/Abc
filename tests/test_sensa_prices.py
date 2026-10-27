@@ -58,3 +58,23 @@ def test_prices_persist_on_disk_between_runs(tmp_path):
     first.save()
     boom = lambda t: (_ for _ in ()).throw(AssertionError("network"))
     assert PriceBook(boom, cache_path=path).last("X") == ("2026-07-03", 13.0)
+
+
+def test_a_throttled_download_is_retried_with_backoff_before_a_ticker_is_marked_missing():
+    naps, calls = [], []
+
+    def flaky(t):
+        calls.append(t)
+        if len(calls) < 3:
+            raise DataUnavailable("HTTP 429")
+        return BARS
+    pb = PriceBook(flaky, retries=2, backoff=1.0, sleep=naps.append)
+    assert pb.last("X") == ("2026-07-03", 13.0) and len(calls) == 3 and naps == [1.0, 2.0]
+    dead = PriceBook(lambda t: (_ for _ in ()).throw(DataUnavailable("blocked")), retries=1, sleep=lambda s: None)
+    assert dead.last("Y") is None
+
+
+def test_closes_returns_the_whole_series_or_none():
+    pb = PriceBook(Hist())
+    assert pb.closes("x") == (["2026-06-29", "2026-06-30", "2026-07-02", "2026-07-03"], [10.0, 11.0, 12.0, 13.0])
+    assert pb.closes("NOPE") is None
