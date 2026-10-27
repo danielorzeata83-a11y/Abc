@@ -33,7 +33,12 @@ ETF_CATALOG = {
     "IEF": ("iShares 7-10 Year Treasury", "bonds"), "LQD": ("iShares Investment Grade Corporate Bond", "bonds"), "HYG": ("iShares High Yield Corporate Bond", "bonds"),
     "TIP": ("iShares TIPS Bond", "bonds"), "GLD": ("SPDR Gold Shares", "commodities"), "SLV": ("iShares Silver Trust", "commodities"),
     "DBC": ("Invesco DB Commodity Index", "commodities"), "VNQ": ("Vanguard Real Estate", "real_estate"),
+    "VUG": ("Vanguard Growth", "factor"), "VTV": ("Vanguard Value", "factor"), "VYM": ("Vanguard High Dividend Yield", "factor"),
+    "VLUE": ("iShares MSCI USA Value Factor", "factor"), "IJR": ("iShares Core S&P Small-Cap", "us_equity"), "IJH": ("iShares Core S&P Mid-Cap", "us_equity"),
+    "XBI": ("SPDR S&P Biotech", "sector"), "VGT": ("Vanguard Information Technology", "sector"), "IBB": ("iShares Biotechnology", "sector"),
+    "VT": ("Vanguard Total World Stock", "international"),
 }
+_TRUST_NAME = re.compile(r"\b(TR|TRUST|SERIES TRUST|STRATEGIC TR|ETF TR)\s*$", re.I)
 _LEVERAGED = re.compile(r"\b(ULTRA|ULTRAPRO|2X|3X|BEAR|SHORT|INVERSE|LEVERAGED|BULL)\b", re.I)
 _CLASS_WORDS = {"CL", "CLASS", "COM", "CAP", "STK", "SHS", "ORD", "A", "B", "C", "NEW"}
 
@@ -107,7 +112,8 @@ def build_picks(overview, prices, insider_trades, politician_trades, top_n=10, p
     stock_rows = [s for s in ok if s["kind"] in ("stock", "adr")][:pool_n]
     etf_rows = {s["ticker"]: s for s in ok if s["kind"] == "etf" and not _LEVERAGED.search(s.get("issuer", ""))}
     etf_pool = {**{t: {"name": n, "category": c} for t, (n, c) in ETF_CATALOG.items()},
-                **{t: {"name": s["issuer"].title(), "category": "other"} for t, s in list(etf_rows.items())[:40] if t not in ETF_CATALOG}}
+                **{t: {"name": f"{t} (ETF held by funds)" if _TRUST_NAME.search(s["issuer"]) else s["issuer"].title(), "category": "other"}
+                   for t, s in list(etf_rows.items())[:40] if t not in ETF_CATALOG}}
     prices.warm(sorted({s["ticker"] for s in stock_rows} | set(etf_pool) | {"SPY"}))
     ins, pol = insider_features(insider_trades), politician_features(politician_trades)
     notes, skipped, skipped_etf = [], {"no_history": 0, "low_price": 0, "downtrend": 0}, {"no_history": 0, "low_price": 0, "downtrend": 0}
@@ -156,6 +162,8 @@ def build_picks(overview, prices, insider_trades, politician_trades, top_n=10, p
                    + (f", active fund buying {_money(r['active_flow'])}" if r["active_flow"] > 0 else "")
                    + (f", {r['new']} funds opened positions" if r.get("new") else ""),
                    f"Price {_pct(f['ret_12_1'])} over 12 months (last month excluded), above its 200-day average"]
+        if f["ret_12_1"] > 1.5:
+            reasons.append(f"Very extended: {_pct(f['ret_12_1'])} in a year; sharp pullbacks are common after moves like this")
         if ins.get(t) and ins[t]["buyers"]:
             reasons.append(f"{ins[t]['buyers']} insider{'s' if ins[t]['buyers'] > 1 else ''} bought, net {_money(ins[t]['net'])} in the last 90 days")
         if pol.get(t) and pol[t]["buyers"]:

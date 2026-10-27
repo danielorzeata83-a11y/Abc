@@ -124,3 +124,14 @@ def test_identical_index_funds_are_listed_once():
 def test_method_and_notes_are_part_of_the_output():
     res = run([row("A", 60, 55), row("B", 61, 55)], {"A": walk(0.001, seed=1), "B": walk(0.001, seed=2)}, top_n=2)
     assert res["method"]["stock_weights"]["smart"] > 0 and "not investment advice" in res["notice"].lower() and res["as_of"] == "d319"
+
+
+def test_trust_names_are_replaced_by_the_ticker_and_very_extended_stocks_carry_a_caution():
+    rows = [row("HOT", 80, 70, issuer="HOT CORP"), row("ZZXA", 70, 60, kind="etf", issuer="SPDR SERIES TRUST"), row("ZZXB", 60, 50, kind="etf", issuer="SCHWAB STRATEGIC TR")]
+    series = {t: walk(0.0007, 0.008, seed=60 + i) for i, t in enumerate(sorted(ETF_CATALOG))}
+    series["HOT"] = [50.0 * 1.012 ** i for i in range(320)]                           # +~4000% in a year: wildly extended
+    series["ZZXA"], series["ZZXB"] = walk(0.002, 0.009, seed=1), walk(0.0018, 0.009, seed=2)
+    res = run(rows, series, top_n=60, max_per_category=60)                          # list everything: the test is about the labels
+    assert any("extended" in r.lower() and "pullback" in r.lower() for r in res["stocks"][0]["reasons"])
+    names = {p["ticker"]: p["name"] for p in res["etfs"]}
+    assert names.get("ZZXA") == "ZZXA (ETF held by funds)" and names.get("ZZXB") == "ZZXB (ETF held by funds)"

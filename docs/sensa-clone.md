@@ -132,6 +132,18 @@ rulări în fundal salvate pe disc).
   (0,80) cât și S&P 500 (1,15); optimizatorul a concentrat pe 2-3 acțiuni și a plătit costuri. E rezultatul clasic: cu estimări zgomotoase,
   1/N e greu de bătut. Rezultatul e o singură cale istorică, cu universul ales azi (survivorship bias), nu o recomandare.
 
+## Picks automate (`/picks`): top 10 acțiuni și top 10 ETF-uri
+Se construiesc singure la pornire și se reîmprospătează la 6 ore (job în fundal, ca restul clasamentelor; „Compute now" pornește imediat).
+- **Acțiuni:** primele 300 cele mai deținute de top 100 fonduri. Scor = momentum 12-1 luni (25%), trend (10%), randament ajustat la risc (15%),
+  fonduri: schimbarea numărului de deținători + cumpărări active (30%), cumpărări de insideri (15%), cumpărări House (5%); ponderile se
+  renormalizează pe semnalele existente. Regulă obligatorie: prețul peste media pe 200 de zile. Clasele de acțiuni și dublurile (corelație ≥ 0,97)
+  apar o singură dată; ponderi inverse la volatilitate, plafon 20%. Acțiunile cu salturi de peste 150% în 12 luni primesc avertisment.
+- **ETF-uri:** catalog de ~50 + cele deținute de fonduri; fără fonduri cu levier sau inverse; maximum 3 pe categorie; fondurile-index identice apar o dată.
+- **Verificare onestă:** regula pe semnalele de preț e rulată în trecut, lunar, fără nicio reglare (toți parametrii fixați dinainte), cu costuri, față
+  de ponderi egale și S&P 500. Semnalele de fonduri/insideri nu pot fi testate retroactiv (nu avem istoricul punctual).
+- **Rezultat real (39 de acțiuni, ian 2023 - oct 2026, universul ales azi = survivorship bias):** regula 27,1% pe an, Sharpe 1,27; ponderi egale
+  30,6%, Sharpe 1,84; S&P 500 21,2%, Sharpe 1,37. Regula NU a bătut ponderile egale.
+
 ## Paginile instituționale (după structura originalului)
 - `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
 - `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru
