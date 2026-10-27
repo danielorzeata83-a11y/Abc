@@ -15,6 +15,7 @@ import time
 import json
 import os
 
+from sensa.envfile import load_env
 from sensa.fsutil import ensure_download
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -933,6 +934,7 @@ def _watch_loop(watcher, minutes, stop):
 
 
 def main():
+    load_env()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8766)

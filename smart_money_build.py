@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 
 from markov.data_providers import DataUnavailable
+from sensa.envfile import load_env
 from sensa.providers import http_fetch, http_post
 from sensa.thirteenf import Figi
 from sensa.universe import refresh_overview
@@ -43,6 +44,7 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true", help="rebuild even if the latest quarter is already built")
     ap.add_argument("--data-dir", default=DATA_DIR)
     a = ap.parse_args(argv)
+    load_env()
     contact = os.environ.get("SEC_CONTACT", "").strip()
     if not contact:
         print("Set SEC_CONTACT (SEC requires a contact in the User-Agent).", file=sys.stderr)
