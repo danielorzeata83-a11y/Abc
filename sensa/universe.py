@@ -354,7 +354,7 @@ def assemble_overview(managers, cur_h, prev_h, prev_managers, period, prev_perio
 import json
 import os
 
-from sensa.fsutil import replace_file
+from sensa.fsutil import ensure_download
 
 
 def _overview_path(data_dir):
@@ -390,11 +390,7 @@ def refresh_overview(data_dir, listing_html, download, figi, top=100, force=Fals
     paths = []
     for s in (cur, prev):
         dest = os.path.join(zdir, os.path.basename(s["url"]))
-        if not os.path.exists(dest):
-            tmp = dest + ".part"
-            download(s["url"], tmp)
-            replace_file(tmp, dest)
-        paths.append(dest)
+        paths.append(ensure_download(download, s["url"], dest))
     from sensa.holders import build_holders_db
     build_holders_db(paths[0], paths[1], cur["period"], prev["period"], db)
     if stored and stored.get("period") == cur["period"] and not force:
