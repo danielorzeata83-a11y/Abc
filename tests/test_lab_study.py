@@ -82,3 +82,14 @@ def test_too_little_history_for_the_window_is_a_clear_error():
     prices, spy = synthetic(300)
     with pytest.raises(ValueError, match="history"):
         run_study(prices, MANIFEST, {**DEFAULT_CONFIG, **FAST, "window": 250})
+
+
+def test_warnings_list_dropped_tickers_and_parameters_chosen_at_the_edge_of_the_grid():
+    prices, spy = synthetic(900)
+    manifest = {**MANIFEST, "dropped": [{"ticker": "ZZZ", "reason": "HTTP 429"}]}
+    r = run_study(prices, manifest, {**DEFAULT_CONFIG, **FAST, "window": 150}, benchmark=spy)
+    text = " ".join(r["warnings"])
+    assert "ZZZ" in text and "HTTP 429" in text
+    edge = [g for g in r["validation"]["selected"].values() if g["lam"] in (min(FAST["lam_grid"]), max(FAST["lam_grid"]))]
+    assert (len([w for w in r["warnings"] if "edge of the grid" in w]) >= 1) == bool(edge)
+    assert "Warnings" in __import__("sensa.lab_study", fromlist=["x"]).report_markdown(r)

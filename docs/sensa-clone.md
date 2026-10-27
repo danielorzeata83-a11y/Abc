@@ -114,6 +114,24 @@ Prețuri zilnice gratuite (Yahoo Finance, split-ajustate) în `sensa/prices.py`;
   portofolii (valoare la mijlocul intervalului); soldurile insiderilor apar doar după o reconstruire a datelor Form 4 cu coloana
   „shares owned following". Randamentele insiderilor folosesc aceeași serie ajustată la ambele capete, ca splitul să nu falsifice rezultatul.
 
+## Portfolio lab (`/portfolio-lab`): protocolul din documentele de optimizare, pe date reale
+Implementează metodologia din cele trei documente (mean-variance, costuri/turnover, shrinkage, CVaR, solvere proximale) fără dependențe noi
+(doar numpy/pandas): `lab_estimators.py` (Ledoit-Wolf, James-Stein), `lab_solvers.py` (proximal-gradient și FISTA cu proiecție exactă pe
+simplexul cu plafon, CVaR prin subgradient), `lab_data.py` (prețuri ajustate Yahoo, aliniate, cu hash și manifest),
+`lab_backtest.py` (walk-forward fără look-ahead, costuri pe turnover, metrici), `lab_study.py` (protocolul), `lab_service.py` (universuri,
+rulări în fundal salvate pe disc).
+- **Protocol:** fereastră de estimare 504 zile; validare (70% din restul datelor) pentru reglarea lambda/kappa pe fiecare familie; testul final
+  rulat o singură dată. Modele comparate pe aceleași zile: ponderi egale, mean-variance simplu, cu costuri/turnover, extins (shrinkage + plafon
+  + costuri), CVaR, S&P 500.
+- **Criterii de acceptare** fixate în config înainte de test: randament net > 0, Sharpe net peste ponderi egale, restricții respectate, câștig în
+  cel puțin jumătate din cele 4 subperioade, stabilitatea ponderilor la perturbarea randamentelor, concentrare (N efectiv, contribuția primelor
+  două active), reproductibilitate. Raportul spune PASS/FAIL cu cifrele.
+- **Universuri:** cele 10 companii din document, cele mai deținute de top 100 fonduri, cumpărările insiderilor, watchlist, tickere proprii.
+- **Artefacte** în `data/smart_money/lab/<id>/`: config.json, data_manifest.json (sha256), metrics.json, weights.csv, returns.csv, report.md, result.json.
+- **Prima rulare reală (10 companii, 2016-2026, test mai 2024 - oct 2026):** ponderile egale (Sharpe 1,73) au bătut atât optimizatorul extins
+  (0,80) cât și S&P 500 (1,15); optimizatorul a concentrat pe 2-3 acțiuni și a plătit costuri. E rezultatul clasic: cu estimări zgomotoase,
+  1/N e greu de bătut. Rezultatul e o singură cale istorică, cu universul ales azi (survivorship bias), nu o recomandare.
+
 ## Paginile instituționale (după structura originalului)
 - `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
 - `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru

@@ -30,7 +30,7 @@ from sensa.insiders import InsiderService
 from sensa.investors import InvestorService, UnknownTicker
 from sensa.managers import browse
 from sensa.politicians import PoliticiansService
-from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_stock, render_latest_filings,
+from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_lab, render_stock, render_latest_filings,
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -179,7 +179,7 @@ _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 _MAX_BODY = 4096
 
 
-def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None):
+def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None, lab=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):   # quiet; never echo URLs (no key leakage)
             pass
@@ -289,6 +289,30 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._send(404, "not found", "text/plain")
                 else:
                     self._send(200, render_investors(parts[1].upper()), "text/html; charset=utf-8")
+                return
+            if u.path.rstrip("/") == "/portfolio-lab":
+                self._send(200, render_lab(), "text/html; charset=utf-8")
+                return
+            if parts[:2] == ["api", "lab"]:
+                if lab is None:
+                    self._json(503, {"error": "the portfolio lab is not configured (set SEC_CONTACT)"})
+                elif parts[2:] == ["status"]:
+                    self._json(200, {"status": lab.status(), "runs": lab.runs()})
+                elif len(parts) == 4 and parts[2] == "result":
+                    try:
+                        r = lab.result(parts[3])
+                        self._json(200, {k: v for k, v in r.items() if k not in ("rebalances", "daily_returns")})
+                    except KeyError:
+                        self._json(404, {"error": "no such run"})
+                elif len(parts) == 5 and parts[2] == "file":
+                    try:
+                        path = lab.file(parts[3], parts[4])
+                        with open(path, "rb") as fh:
+                            self._send(200, fh.read(), "text/plain; charset=utf-8" if path.endswith((".md", ".csv")) else "application/json")
+                    except KeyError:
+                        self._send(404, "not found", "text/plain")
+                else:
+                    self._send(404, "not found", "text/plain")
                 return
             if len(parts) == 3 and parts[:2] == ["api", "portfolio"]:
                 if perf is None:
@@ -529,6 +553,19 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._json(200, {"started": insiders.start(force=bool(body.get("force")))})
                 return
             pp = [x for x in route.split("/") if x]
+            if pp == ["api", "lab", "run"]:
+                if lab is None:
+                    self._json(503, {"error": "the portfolio lab is not configured (set SEC_CONTACT)"})
+                    return
+                try:
+                    self._json(200, {"run_id": lab.submit(body)})
+                except ValueError as e:
+                    self._json(400, {"error": str(e)})
+                except DataUnavailable as e:                  # a RuntimeError subclass: must be caught first
+                    self._json(503, {"error": str(e)})
+                except RuntimeError as e:
+                    self._json(409, {"error": str(e)})
+                return
             if len(pp) == 4 and pp[:2] == ["api", "performance"] and pp[3] == "refresh":
                 if perf is None or pp[2] not in perf.jobs:
                     self._json(503 if perf is None else 404, {"error": "unknown performance view"})
@@ -562,8 +599,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
     return Handler
 
 
-def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None):
-    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors, live, perf))
+def make_server(hub, host, port, watchlist, watcher=None, smart=None, insiders=None, darkpool=None, politicians=None, investors=None, live=None, perf=None, lab=None):
+    return ThreadingHTTPServer((host, port), _make_handler(hub, tuple(watchlist), watcher, smart, insiders, darkpool, politicians, investors, live, perf, lab))
 
 
 def build_hub():
@@ -679,6 +716,21 @@ def build_perf(smart, insiders, politicians):
     return Perf(portfolio, jobs)
 
 
+def build_lab(smart, insiders, watchlist):
+    if smart is None:
+        return None
+    from sensa.lab_service import LabService
+    from sensa.universe import load_overview
+    yc = YahooChart(http_fetch)
+
+    def overview():
+        try:
+            return load_overview(smart.data_dir)
+        except DataUnavailable:
+            return None
+    return LabService(smart.data_dir, lambda t, years: yc.adjusted(t, years), overview=overview, insiders=insiders, watchlist=watchlist)
+
+
 def build_insiders(contact):
     """Quarterly SEC insider data set (Form 4 open-market trades)."""
     if not contact:
@@ -757,11 +809,12 @@ def main():
     insiders = build_insiders(os.environ.get("SEC_CONTACT", "").strip())
     politicians = build_politicians(os.environ.get("SEC_CONTACT", "").strip())
     perf = build_perf(smart, insiders, politicians)
+    lab = build_lab(smart, insiders, wl)
     if a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(politicians, a.smart_hours, threading.Event()), daemon=True).start()
     srv = make_server(hub, a.host, a.port, wl, watcher=watcher, smart=smart, insiders=insiders,
-                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors, live=live, perf=perf)
+                      darkpool=DarkPool(http_post), politicians=politicians, investors=investors, live=live, perf=perf, lab=lab)
     if insiders is not None and a.smart_hours > 0:
         import threading
         threading.Thread(target=_smart_loop, args=(insiders, a.smart_hours, threading.Event()), daemon=True).start()

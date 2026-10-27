@@ -30,7 +30,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 
 NAV_ITEMS = (("dash", "/", "Dashboard"), ("smart", "/smart-money", "Smart Money"),
              ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"), ("political", "/political-trades", "Politicians"),
-             ("alerts", "/smart-money/alerts", "Alerts"))
+             ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"))
 
 
 LINK_JS = r"""
@@ -1021,3 +1021,95 @@ def render_stock(ticker):
         raise ValueError("bad ticker")
     return shell(f"{ticker} stock", "dash", _STOCK_BODY.replace("__T__", ticker), _STOCK_JS.replace("__T__", ticker),
                  _MANAGER_CSS + _SM_CSS + _LIST_CSS + _STOCK_CSS)
+
+
+# ------------------------------------------------------------------ portfolio lab
+_LAB_CSS = r"""
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.7rem;align-items:end}
+.form label{display:block;font-size:.65rem;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);margin-bottom:.2rem}
+.form input,.form select{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:.45rem .6rem;font:inherit}
+.chk{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem 0;border-top:1px solid var(--line)}.chk:first-child{border-top:0}
+.chk b{font-size:.7rem;padding:.1rem .45rem;border-radius:5px;flex:none}.chk .ok{background:#0c3b2c;color:#22c58b}.chk .no{background:#451a1a;color:#f0524f}
+.leg{display:flex;gap:1rem;flex-wrap:wrap;font-size:.78rem;margin-top:.4rem}.leg i{display:inline-block;width:18px;height:3px;margin-right:.35rem;vertical-align:middle}
+.wbar{display:inline-block;height:8px;background:var(--acc);border-radius:4px;vertical-align:middle;margin-right:.4rem}
+"""
+
+_LAB_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Portfolio lab</h1>
+ <p class="mut">Walk-forward test of portfolio optimisation (mean-variance, turnover costs, shrinkage, CVaR) against equal weights and the S&amp;P 500,
+ on real adjusted prices, net of costs. Parameters are tuned on a validation period; the final test runs once. Acceptance criteria are fixed before it runs.
+ Research tool, not investment advice.</p>
+ <section class="card"><form id="f" class="form">
+  <div><label for="u">Universe</label><select id="u"><option value="document">Document: 10 S&amp;P 500 companies</option>
+   <option value="most_held">Most held by the top-100 funds</option><option value="insider_buys">Biggest insider buys (30 days)</option>
+   <option value="watchlist">Dashboard watchlist</option><option value="custom">Custom tickers</option></select></div>
+  <div id="cw" hidden><label for="c">Tickers</label><input id="c" placeholder="AAPL MSFT NVDA ..." maxlength="300"></div>
+  <div><label for="y">History</label><select id="y"><option value="5">5 years</option><option value="10" selected>10 years</option></select></div>
+  <div><label for="b">Cost per trade (bps)</label><input id="b" type="number" min="0" max="100" step="1" value="5"></div>
+  <div><label for="p">Max weight per stock (%)</label><input id="p" type="number" min="5" max="100" step="5" value="35"></div>
+  <div><button class="btn on" id="go" type="submit">Run study</button></div>
+ </form><div id="st" class="mut" style="margin-top:.6rem"></div><div id="msg" class="err"></div></section>
+ <div id="out"></div>
+ <section class="card" style="margin-top:1rem"><h3>Previous runs</h3><div id="runs" class="mut">None yet</div></section>
+</div>
+"""
+
+_LAB_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const pc=v=>v==null?'-':(v*100).toFixed(2)+'%',sh=v=>v==null?'-':v.toFixed(2);
+async function api(p,body){const r=await fetch(p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined),j=await r.json();
+ if(!r.ok)throw new Error(j.error||r.status);return j}
+const NAMES={equal_weight:'Equal weights',mean_variance:'Mean-variance',mv_costs:'Mean-variance + turnover costs',extended:'Extended (shrinkage, cap, costs)',cvar:'CVaR',benchmark:'S&P 500'};
+const COL={equal_weight:'#8497b5',mean_variance:'#ffa64d',mv_costs:'#a78bfa',extended:'#1fa3ff',cvar:'#22c58b',benchmark:'#f0524f'};
+$('u').onchange=()=>{$('cw').hidden=$('u').value!=='custom'};
+function chart(c){const W=820,H=280,L=48,B=24,T=10,ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+ svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.setAttribute('width','100%');
+ const all=Object.values(c.models).flat(),lo=Math.min(...all)*.98,hi=Math.max(...all)*1.02,n=c.dates.length;
+ const X=i=>L+i*(W-L-8)/Math.max(n-1,1),Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+ const mk=(t,a)=>{const e=document.createElementNS(ns,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+ for(let g=0;g<=4;g++){const v=lo+(hi-lo)*g/4,y=Y(v);svg.append(mk('line',{x1:L,x2:W-8,y1:y,y2:y,stroke:'#16263f'}));const t=mk('text',{x:L-6,y:y+4,'text-anchor':'end',fill:'#8497b5','font-size':11});t.textContent=v.toFixed(2);svg.append(t)}
+ for(const k in c.models){const d=c.models[k].map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+  svg.append(mk('path',{d,fill:'none',stroke:COL[k]||'#fff','stroke-width':k==='extended'?2.6:1.4,'stroke-dasharray':k==='benchmark'?'4 3':'0'}))}
+ for(const i of [0,Math.floor(n/2),n-1]){const t=mk('text',{x:X(i),y:H-6,'text-anchor':i===0?'start':i===n-1?'end':'middle',fill:'#8497b5','font-size':11});t.textContent=c.dates[i];svg.append(t)}
+ const box=el('div');box.append(svg);const lg=el('div',null,'leg');
+ for(const k in c.models){const s=el('span'),i=el('i');i.style.background=COL[k]||'#fff';s.append(i,document.createTextNode(NAMES[k]||k));lg.append(s)}box.append(lg);return box}
+function section(title,node){const s=el('section',null,'card');s.style.marginTop='1rem';s.append(el('h3',title),node);return s}
+function table(head,rows){const t=el('table',null,'t'),h=el('tr');head.forEach((x,i)=>{const th=el('th',x);if(i)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);
+ const tb=el('tbody');for(const r of rows){const tr=el('tr');r.forEach((c,i)=>{const td=c instanceof Node?(()=>{const d=el('td');d.append(c);return d})():el('td',c);if(i)td.classList.add('n');tr.append(td)});tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+function show(r){const out=$('out');out.replaceChildren();const p=r.periods,m=r.test.models;
+ if((r.warnings||[]).length){const w=el('section',null,'card');w.style.borderColor='#ffb347';w.append(el('h3','Warnings'));for(const x of r.warnings)w.append(el('div',x,'mut'));out.append(w)}
+ out.append(section('Acceptance criteria (fixed before the test)',(()=>{const d=el('div');for(const a of r.acceptance){const row=el('div',null,'chk'),b=el('b',a.pass?'PASS':'FAIL',a.pass?'ok':'no'),x=el('div');x.append(el('div',a.text),el('div',a.detail,'mut'));row.append(b,x);d.append(row)}return d})()));
+ const keys=['equal_weight','mean_variance','mv_costs','extended','cvar','benchmark'];
+ out.append(section('Final test, net of costs ('+p.validation_end+' to '+p.end+', '+p.test_days+' days)',
+  table(['Model','Annual return','Volatility','Sharpe','Max drawdown','CVaR 95% (day)','Avg turnover','Costs paid'],keys.map(k=>[NAMES[k],pc(m[k].ann_return),pc(m[k].ann_vol),sh(m[k].sharpe),pc(m[k].max_drawdown),pc(m[k].cvar95),pc(m[k].avg_turnover),pc(m[k].cost_total)]))));
+ out.append(section('Growth of 1 on the test days',chart(r.curves)));
+ const tk=r.tickers;
+ out.append(section('Weights (latest rebalance)',table(['Stock','Equal','Mean-variance','+ costs','Extended','CVaR','Average (extended)'],tk.map(t=>{const w=r.weights,a=el('span');a.append(tkLink(t));
+  const bar=v=>{const s=el('span');const b=el('span',null,'wbar');b.style.width=Math.round(v*120)+'px';s.append(b,document.createTextNode((v*100).toFixed(1)+'%'));return s};
+  return [a,(w.equal_weight[t]*100).toFixed(1)+'%',(w.mean_variance[t]*100).toFixed(1)+'%',(w.mv_costs[t]*100).toFixed(1)+'%',bar(w.extended[t]),(w.cvar[t]*100).toFixed(1)+'%',(r.average_weights[t]*100).toFixed(1)+'%']}))));
+ out.append(section('The six questions of the case study',(()=>{const d=el('div');for(const a of r.answers){const x=el('div',null,'chk'),y=el('div');y.append(el('b',a.question),el('div',a.answer,'mut'));x.append(y);d.append(x)}return d})()));
+ const sel=r.validation.selected;
+ out.append(section('Chosen on the validation period',table(['Model','lambda','kappa','Validation Sharpe'],Object.keys(sel).map(k=>[NAMES[k],String(sel[k].lam),sel[k].kappa==null?'-':String(sel[k].kappa),sh(sel[k].sharpe)]))));
+ const files=el('div');for(const f of ['report.md','metrics.json','weights.csv','returns.csv','config.json','data_manifest.json']){const a=el('a',f);a.href='/api/lab/file/'+r.run_id+'/'+f;a.style.marginRight='1rem';files.append(a)}
+ out.append(section('Audit files ('+r.manifest.rows+' days of data, sha256 '+r.manifest.sha256.slice(0,12)+')',files));
+ out.append(el('p',r.notice,'note'))}
+async function open_(id){try{const r=await api('/api/lab/result/'+id);r.run_id=id;show(r);window.scrollTo({top:$('out').offsetTop-80,behavior:'smooth'})}catch(e){$('msg').textContent=e.message}}
+function drawRuns(runs){const b=$('runs');if(!runs.length){b.textContent='None yet';return}
+ b.replaceChildren(table(['Run','Universe','Stocks','Criteria passed','Extended Sharpe','Equal Sharpe'],runs.map(r=>{const a=el('a',r.id);a.href='#';a.onclick=e=>{e.preventDefault();open_(r.id)};
+  return [a,r.universe,r.tickers.length+' ('+r.tickers.slice(0,5).join(', ')+(r.tickers.length>5?'…':'')+')',r.passed+' / '+r.criteria,sh(r.extended_sharpe),sh(r.equal_sharpe)]})))}
+let last=null;
+async function poll(){try{const s=await api('/api/lab/status');drawRuns(s.runs);const st=s.status;
+  $('st').textContent=st.state==='running'?'Running: '+st.message+'… (a few minutes)':'';$('go').disabled=st.state==='running';
+  if(st.state==='error')$('msg').textContent=st.message;
+  if(st.state==='running'){setTimeout(poll,3000)}else if(st.run_id&&st.state==='done'&&st.run_id!==last){last=st.run_id;open_(st.run_id)}}catch(e){$('msg').textContent=e.message}}
+$('f').onsubmit=async e=>{e.preventDefault();$('msg').textContent='';
+ try{await api('/api/lab/run',{universe:$('u').value,custom:$('c').value,years:+$('y').value,cost_bps:+$('b').value,cap:+$('p').value/100});poll()}catch(x){$('msg').textContent=x.message}};
+poll();
+"""
+
+
+def render_lab():
+    return shell("Portfolio lab", "lab", _LAB_BODY, _LAB_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS + _LAB_CSS)

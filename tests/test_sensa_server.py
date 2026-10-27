@@ -239,7 +239,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
              srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
-             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO")]
+             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -947,3 +947,84 @@ def test_pages_have_performance_views_wired_to_the_performance_api():
 
 def test_insider_performance_tables_shorten_long_joint_filer_lists():
     assert "own=r=>" in srv.render_insiders() and "{l:'Insider',f:r=>own(r)}" in srv.render_insiders()
+
+
+class FakeLab:
+    def __init__(self):
+        self.specs = []
+
+    def submit(self, spec):
+        self.specs.append(spec)
+        if spec.get("universe") == "bad":
+            raise ValueError("unknown universe")
+        if spec.get("universe") == "busy":
+            raise RuntimeError("a lab run is already running")
+        if spec.get("universe") == "cold":
+            raise DataUnavailable("The Smart Money overview is not built yet")
+        return "20261027-101500-abcdef"
+
+    def status(self):
+        return {"state": "idle", "message": "", "run_id": None}
+
+    def runs(self):
+        return [{"id": "20261027-101500-abcdef", "passed": 5}]
+
+    def result(self, rid):
+        if rid != "20261027-101500-abcdef":
+            raise KeyError(rid)
+        return {"tickers": ["A"], "curves": {"dates": [], "models": {}}, "rebalances": {"x": 1}, "daily_returns": {"x": [1]}}
+
+    def file(self, rid, name):
+        if name != "report.md":
+            raise KeyError(name)
+        import tempfile
+        f = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False)
+        f.write("# report")
+        f.close()
+        return f.name
+
+
+def _lab(method, path, body=None, lab="default", headers=None):
+    L = FakeLab() if lab == "default" else lab
+    server = srv.make_server(FakeHub(), "127.0.0.1", 0, ["AAA"], lab=L)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        h = {"Content-Type": "application/json"} if method == "POST" else {}
+        h.update(headers or {})
+        c.request(method, path, body=json.dumps(body or {}).encode() if method == "POST" else None, headers=h)
+        r = c.getresponse()
+        return r.status, r.read(), L
+    finally:
+        server.shutdown()
+
+
+def test_lab_endpoints_page_status_result_files_and_run():
+    st, body, _ = _lab("GET", "/portfolio-lab")
+    assert st == 200 and b"/api/lab/run" in body
+    st, body, _ = _lab("GET", "/api/lab/status")
+    j = json.loads(body)
+    assert st == 200 and j["status"]["state"] == "idle" and j["runs"][0]["passed"] == 5
+    st, body, _ = _lab("GET", "/api/lab/result/20261027-101500-abcdef")
+    assert st == 200 and "rebalances" not in json.loads(body) and "daily_returns" not in json.loads(body)      # heavy parts stay on disk
+    assert _lab("GET", "/api/lab/result/nope")[0] == 404
+    st, body, _ = _lab("GET", "/api/lab/file/20261027-101500-abcdef/report.md")
+    assert st == 200 and body == b"# report"
+    assert _lab("GET", "/api/lab/file/20261027-101500-abcdef/secret.txt")[0] == 404
+    st, body, lab = _lab("POST", "/api/lab/run", {"universe": "document"})
+    assert st == 200 and json.loads(body)["run_id"] == "20261027-101500-abcdef" and lab.specs == [{"universe": "document"}]
+
+
+def test_lab_run_errors_and_guards():
+    assert _lab("POST", "/api/lab/run", {"universe": "bad"})[0] == 400
+    assert _lab("POST", "/api/lab/run", {"universe": "busy"})[0] == 409
+    assert _lab("POST", "/api/lab/run", {"universe": "cold"})[0] == 503
+    assert _lab("POST", "/api/lab/run", {}, lab=None)[0] == 503
+    assert _lab("POST", "/api/lab/run", {}, headers={"Content-Type": "text/plain"})[0] == 415
+    assert _lab("POST", "/api/lab/run", {}, headers={"Host": "evil.example.com"})[0] == 403
+    assert _lab("GET", "/api/lab/status", lab=None)[0] == 503
+
+
+def test_lab_page_script_is_valid_and_the_nav_links_to_it():
+    html = srv.render_lab()
+    assert "/portfolio-lab" in srv.render_alerts() and "Acceptance" in html and "not investment advice" in html.lower()

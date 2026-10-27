@@ -17,7 +17,7 @@ from sensa.lab_solvers import solve_portfolio
 
 DEFAULT_CONFIG = {
     "window": 504, "every": 21, "cost_bps": 5.0, "cap": 0.35, "validation_share": 0.7,
-    "lam_grid": [2.0, 5.0, 10.0, 20.0], "kappa_grid": [0.002, 0.01, 0.05], "cvar_lam_grid": [0.5, 1.0, 2.0],
+    "lam_grid": [0.5, 1.0, 2.0, 5.0, 10.0, 20.0], "kappa_grid": [0.002, 0.01, 0.05], "cvar_lam_grid": [0.25, 0.5, 1.0, 2.0],
     "cvar_alpha": 0.95, "cvar_iters": 1500, "perturbations": 10, "perturbation_noise": 0.10, "seed": 0,
     "criteria": {"min_net_ann_return": 0.0, "min_subwindows_beating": 0.5, "max_weight_instability": 0.5,
                  "max_top2_contribution": 0.7, "min_effective_n": 3.0},
@@ -150,6 +150,12 @@ def run_study(prices, manifest, config=None, benchmark=None):
         {"question": "Does CVaR reduce tail losses out of sample?", "answer": f"Daily 95% CVaR on the test: CVaR model {models['cvar']['cvar95']:.2%} vs mean-variance {models['mean_variance']['cvar95']:.2%}."},
         {"question": "Does the result depend on one or two companies?", "answer": "n/a: the extended model made no net profit." if top2 is None else f"The two largest contributors give {top2:.0%} of the extended model's return."},
     ]
+    warnings = [f"{d['ticker']} was left out: {d['reason']}" for d in manifest.get("dropped", [])]
+    lam_lo, lam_hi = min(cfg["lam_grid"]), max(cfg["lam_grid"])
+    for fam, g in selected.items():
+        grid_lams = cfg["cvar_lam_grid"] if fam == "cvar" else cfg["lam_grid"]
+        if len(grid_lams) > 1 and g["lam"] in (min(grid_lams), max(grid_lams)):
+            warnings.append(f"{fam}: lambda={g['lam']} sits at the edge of the grid {grid_lams}; the best value may lie outside it")
     wealth = {k: [float(x) for x in (1 + v).cumprod().values] for k, v in daily.items()}
     return {
         "notice": NOTICE, "config": cfg, "manifest": manifest, "tickers": cols,
@@ -157,7 +163,7 @@ def run_study(prices, manifest, config=None, benchmark=None):
                     "validation_days": val_end - first, "test_days": len(test_idx)},
         "validation": {"grid": grid, "selected": selected},
         "test": {"models": models},
-        "acceptance": acceptance, "answers": answers,
+        "acceptance": acceptance, "answers": answers, "warnings": warnings,
         "weights": {k: {c: float(w) for c, w in zip(cols, v["rebalance_weights"].iloc[-1].values)} for k, v in runs.items()},
         "average_weights": {c: float(w) for c, w in wbar.items()},
         "contributions": {c: float(x) for c, x in contrib.items()},
@@ -191,6 +197,8 @@ def report_markdown(r):
     pct = lambda x: "-" if x is None else f"{x:.2%}"
     for k, v in m.items():
         L.append(f"| {k} | {pct(v['ann_return'])} | {pct(v['ann_vol'])} | {'-' if v['sharpe'] is None else round(v['sharpe'], 2)} | {pct(v['max_drawdown'])} | {pct(v['cvar95'])} | {pct(v['avg_turnover'])} | {pct(v['cost_total'])} |")
+    if r.get("warnings"):
+        L += ["", "## Warnings", ""] + [f"- {w}" for w in r["warnings"]]
     L += ["", "## Acceptance criteria (fixed before the test)", ""]
     L += [f"- {'PASS' if a['pass'] else 'FAIL'} - {a['text']} ({a['detail']})" for a in r["acceptance"]]
     L += ["", "## Selected on validation", ""] + [f"- {k}: lambda={v['lam']}" + (f", kappa={v['kappa']}" if "kappa" in v else "") + f", validation Sharpe {v['sharpe']}" for k, v in r["validation"]["selected"].items()]
