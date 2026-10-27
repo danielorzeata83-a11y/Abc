@@ -727,7 +727,9 @@ def build_perf(smart, insiders, politicians):
 
     def overview():
         return load_overview(d)
-    jobs["picks"] = PerfJob("building the picks", lambda: picks_board(overview, prices, insiders, politicians, adj.get), os.path.join(d, "perf_picks.json"))
+    from sensa.track_record import TrackRecord
+    track = TrackRecord(os.path.join(d, "picks_history.json"))
+    jobs["picks"] = PerfJob("building the picks", lambda: picks_board(overview, prices, insiders, politicians, adj.get, track=track), os.path.join(d, "perf_picks.json"))
     if politicians is not None:
         jobs["members"] = PerfJob("pricing House trades", lambda: members_board(politicians, prices), os.path.join(d, "perf_members.json"))
     if insiders is not None:

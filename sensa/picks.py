@@ -213,7 +213,8 @@ def build_picks(overview, prices, insider_trades, politician_trades, top_n=10, p
         if len(chosen) == top_n:
             break
     etfs = _finish(chosen)
-    return {"notice": NOTICE, "as_of": as_of[0], "stocks": stocks, "etfs": etfs, "skipped": skipped, "skipped_etf": skipped_etf,
+    pool_prices = {"stocks": {p["ticker"]: p["price"] for p in scored}, "etfs": {p["ticker"]: p["price"] for p in escored}}
+    return {"notice": NOTICE, "as_of": as_of[0], "stocks": stocks, "etfs": etfs, "pool_prices": pool_prices, "skipped": skipped, "skipped_etf": skipped_etf,
             "skipped_notes": notes[:40], "quarter": overview.get("quarter"),
             "pool": {"stocks": len(stock_rows), "etfs": len(etf_pool), "stocks_scored": len(scored), "etfs_scored": len(escored)},
             "method": {"stock_weights": sw, "etf_weights": ew, "trend_rule": "price above its 200-day average", "min_price": min_price,

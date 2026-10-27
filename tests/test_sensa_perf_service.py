@@ -144,3 +144,13 @@ def test_a_failing_backtest_does_not_lose_the_picks():
         raise DataUnavailable("blocked")
     out = picks_board(lambda: pick_overview(rows), Book(series), None, None, adjusted)
     assert out["stocks"] and out["backtest"] is None and out["backtest_error"]
+
+
+def test_picks_board_records_a_snapshot_and_attaches_the_track_record(tmp_path):
+    from sensa.track_record import TrackRecord
+    rows = [row(f"S{i}", 60 + i, 50) for i in range(8)]
+    series = {f"S{i}": walk(0.001, 0.004, seed=i) for i in range(8)}
+    series["SPY"] = walk(0.0005, 0.006, seed=77)
+    tr = TrackRecord(str(tmp_path / "h.json"))
+    out = picks_board(lambda: pick_overview(rows), Book(series), None, None, lambda t, y: (_ for _ in ()).throw(DataUnavailable("x")), track=tr)
+    assert out["track_record"]["snapshots"] == 1 and len(tr.snapshots()) == 1 and tr.snapshots()[0]["date"] == out["as_of"]

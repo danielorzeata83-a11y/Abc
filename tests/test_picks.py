@@ -14,11 +14,24 @@ class Book:
 
     def closes(self, t):
         c = self.s.get(t.upper())
-        return ([f"d{i}" for i in range(len(c))], c) if c is not None else None
+        if c is None:
+            return None
+        import pandas as pd
+        return (list(pd.bdate_range(end="2026-10-23", periods=len(c)).strftime("%Y-%m-%d")), c)
 
     def last(self, t):
         c = self.s.get(t.upper())
-        return ("d", c[-1]) if c else None
+        return ("2026-10-23", c[-1]) if c else None
+
+    def on_or_before(self, t, day):
+        h = self.closes(t)
+        rows = [(d, x) for d, x in zip(*h) if d <= day] if h else []
+        return rows[-1] if rows else None
+
+    def on_or_after(self, t, day):
+        h = self.closes(t)
+        rows = [(d, x) for d, x in zip(*h) if d >= day] if h else []
+        return rows[0] if rows else None
 
 
 def walk(drift, vol=0.01, n=320, seed=0, start=50.0):
@@ -123,7 +136,7 @@ def test_identical_index_funds_are_listed_once():
 
 def test_method_and_notes_are_part_of_the_output():
     res = run([row("A", 60, 55), row("B", 61, 55)], {"A": walk(0.001, seed=1), "B": walk(0.001, seed=2)}, top_n=2)
-    assert res["method"]["stock_weights"]["smart"] > 0 and "not investment advice" in res["notice"].lower() and res["as_of"] == "d319"
+    assert res["method"]["stock_weights"]["smart"] > 0 and "not investment advice" in res["notice"].lower() and res["as_of"] == "2026-10-23"
 
 
 def test_trust_names_are_replaced_by_the_ticker_and_very_extended_stocks_carry_a_caution():
@@ -135,3 +148,9 @@ def test_trust_names_are_replaced_by_the_ticker_and_very_extended_stocks_carry_a
     assert any("extended" in r.lower() and "pullback" in r.lower() for r in res["stocks"][0]["reasons"])
     names = {p["ticker"]: p["name"] for p in res["etfs"]}
     assert names.get("ZZXA") == "ZZXA (ETF held by funds)" and names.get("ZZXB") == "ZZXB (ETF held by funds)"
+
+
+def test_output_carries_the_prices_of_the_scored_pool_for_the_track_record():
+    res = run([row("A", 60, 55), row("B", 61, 55)], {"A": walk(0.001, 0.002, seed=1), "B": walk(0.0012, 0.002, seed=2)}, top_n=2)
+    assert set(res["pool_prices"]) == {"stocks", "etfs"} and set(res["pool_prices"]["stocks"]) == {"A", "B"}
+    assert all(isinstance(v, float) for v in res["pool_prices"]["stocks"].values())

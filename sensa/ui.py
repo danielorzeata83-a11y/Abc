@@ -1152,6 +1152,16 @@ function curve(c){const W=820,H=240,L=44,B=22,T=8,ns='http://www.w3.org/2000/svg
 function render(d){const w=el('div');
  w.append(sec('Top '+d.stocks.length+' stocks',pickTable(d.stocks,false),'Among the '+d.pool.stocks+' most widely held stocks of the top funds ('+d.pool.stocks_scored+' passed the filters). Weights: inverse volatility, at most '+Math.round(d.method.max_weight*100)+'% each. Prices as of '+d.as_of+'.'));
  w.append(sec('Top '+d.etfs.length+' ETFs',pickTable(d.etfs,true),'From '+d.pool.etfs+' ETFs (broad catalogue plus those the funds hold); leveraged and inverse funds excluded; at most '+d.method.max_per_category+' per category; identical index funds listed once.'));
+ const tr=d.track_record;
+ if(tr){const box=el('div');
+  if(!tr.rows.length)box.append(el('div','Collecting: '+tr.snapshots+' snapshot(s) saved so far. Today\'s list is saved automatically; results appear from the next day.','mut'));
+  else{const a=tr.aggregate,line=(k,l)=>a[k]&&a[k].n?l+': '+a[k].n+' snapshot(s), average '+(a[k].avg_excess_pct>=0?'+':'')+a[k].avg_excess_pct.toFixed(1)+' points vs the S&P 500, beat it '+a[k].hit_rate_pct.toFixed(0)+'% of the time':null;
+   for(const [k,l] of [['stocks','Stocks'],['stocks_7d','Stocks, 7+ days old'],['stocks_30d','Stocks, 30+ days old'],['etfs','ETFs'],['etfs_30d','ETFs, 30+ days old']]){const x=line(k,l);if(x)box.append(el('div',x,'sm'))}
+   const t=el('table',null,'t'),h=el('tr');['Snapshot','Days','Top 10 stocks','Pool of stocks','Top 10 ETFs','S&P 500'].forEach((x,i)=>{const th=el('th',x);if(i)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+   const f=v=>v==null?'-':(v>=0?'+':'')+v.toFixed(1)+'%';
+   for(const r of tr.rows.slice(0,30)){const row=el('tr');row.append(el('td',r.date),el('td',String(r.age_days),'n'),el('td',r.stocks?f(r.stocks.weighted_pct):'-','n'),el('td',r.stocks?f(r.stocks.pool_pct):'-','n'),el('td',r.etfs?f(r.etfs.weighted_pct):'-','n'),el('td',f(r.spy_pct),'n'));tb.append(row)}
+   t.append(tb);const w=el('div',null,'tbl');w.append(t);box.append(w)}
+  w.append(sec('Live track record (forward only, saved every day)',box,tr.note))}
  const bt=d.backtest;
  if(bt){const m=bt.models,rows=[['picks_rule','The rule (top '+bt.params.top_n+', price signals only)'],['equal_weight','Equal weights, same stocks'],['benchmark','S&P 500']];
   const t=el('table',null,'t'),h=el('tr');['Model','Annual return','Volatility','Sharpe','Max drawdown','Costs paid'].forEach((x,i)=>{const th=el('th',x);if(i)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
