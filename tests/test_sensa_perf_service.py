@@ -100,3 +100,47 @@ def test_insiders_board_has_buy_performance_and_the_biggest_balances():
     d = insiders_board(Ins(), book)
     assert d["performance"]["n"] == 1 and d["performance"]["avg_return_pct"] == 50.0
     assert d["holdings"][0]["owner"] == "Ann" and d["holdings"][0]["value"] == 750000.0 and "BBB" not in book.warmed
+
+
+from sensa.perf_service import picks_board
+from tests.test_picks import Book, overview as pick_overview, row, walk
+
+
+def test_picks_board_builds_the_picks_and_an_out_of_sample_backtest_of_the_price_rule():
+    rows = [row(f"S{i}", 60 + i, 50) for i in range(16)]
+    series = {f"S{i}": walk(0.0004 + 0.00006 * i, 0.004, seed=i, n=900) for i in range(16)}
+    series["SPY"] = walk(0.0004, 0.008, seed=99, n=900)
+
+    import pandas as pd
+    dates = list(pd.bdate_range("2020-01-01", periods=900).strftime("%Y-%m-%d"))
+
+    def adjusted(t, years):
+        return list(zip(dates, series[t]))
+
+    class Ins:
+        def trades_since(self, d):
+            return []
+
+    class Pol:
+        def trades_since(self, d):
+            raise DataUnavailable("not built")
+    out = picks_board(lambda: pick_overview(rows), Book(series), Ins(), Pol(), adjusted, backtest_n=16)
+    assert out["stocks"] and out["as_of"] and out["backtest"]["models"]["picks_rule"]["days"] > 100
+    assert out["backtest"]["periods"]["tickers"] == 16
+
+
+def test_picks_board_without_an_overview_says_what_to_do():
+    def cold():
+        raise DataUnavailable("No Smart Money overview yet")
+    with pytest.raises(DataUnavailable, match="overview"):
+        picks_board(cold, Book({}), None, None, lambda t, y: [])
+
+
+def test_a_failing_backtest_does_not_lose_the_picks():
+    rows = [row(f"S{i}", 60 + i, 50) for i in range(6)]
+    series = {f"S{i}": walk(0.001, 0.004, seed=i) for i in range(6)}
+
+    def adjusted(t, years):
+        raise DataUnavailable("blocked")
+    out = picks_board(lambda: pick_overview(rows), Book(series), None, None, adjusted)
+    assert out["stocks"] and out["backtest"] is None and out["backtest_error"]

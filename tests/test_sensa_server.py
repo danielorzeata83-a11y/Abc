@@ -239,7 +239,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
              srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
-             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab()]
+             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab(), srv.render_picks()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -1028,3 +1028,11 @@ def test_lab_run_errors_and_guards():
 def test_lab_page_script_is_valid_and_the_nav_links_to_it():
     html = srv.render_lab()
     assert "/portfolio-lab" in srv.render_alerts() and "Acceptance" in html and "not investment advice" in html.lower()
+
+
+def test_picks_page_is_served_wired_to_the_performance_api_and_linked_from_the_nav():
+    html = srv.render_picks()
+    assert "perfView('picks'" in html and "Top 10 stocks" in html and "not investment advice" in html.lower()
+    assert "/picks" in srv.render_alerts()
+    st, body, _ = _perf_req("GET", "/picks")
+    assert st == 200 and b"perfView('picks'" in body

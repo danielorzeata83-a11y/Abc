@@ -28,7 +28,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 @media(max-width:700px){.nav{padding:.5rem .6rem;overflow-x:auto}.wrap{padding:.7rem}}
 """
 
-NAV_ITEMS = (("dash", "/", "Dashboard"), ("smart", "/smart-money", "Smart Money"),
+NAV_ITEMS = (("dash", "/", "Dashboard"), ("picks", "/picks", "Picks"), ("smart", "/smart-money", "Smart Money"),
              ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"), ("political", "/political-trades", "Politicians"),
              ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"))
 
@@ -1113,3 +1113,65 @@ poll();
 
 def render_lab():
     return shell("Portfolio lab", "lab", _LAB_BODY, _LAB_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS + _LAB_CSS)
+
+
+# ------------------------------------------------------------------ automatic picks
+_PICKS_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Top 10 stocks and ETFs to consider</h1>
+ <p class="mut">Built automatically from public data and refreshed every few hours: what the 100 biggest funds are buying, insider and House purchases,
+ price momentum, trend and risk. A screen to start research from, not investment advice. The page also shows how the price part of the rule did in the past.</p>
+ <div id="view"></div>
+</div>
+"""
+
+_PICKS_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const pc=v=>v==null?'-':(v*100).toFixed(1)+'%',sg=v=>v==null?'-':(v>=0?'+':'')+(v*100).toFixed(0)+'%',sh=v=>v==null?'-':v.toFixed(2);
+const SIGNAME={momentum:'momentum',trend:'trend',quality:'risk-adjusted',smart:'funds',insider:'insiders',politician:'House',drawdown:'near high'};
+function chips(sig){const d=el('div',null,'chips');for(const k of Object.keys(sig)){const v=sig[k];if(v==null||Math.abs(v)<0.5)continue;
+ const c=el('span',(v>0?'+ ':'- ')+SIGNAME[k],'sig '+(v>0?'up':'dn'));d.append(c)}return d}
+function pickTable(rows,etf){const t=el('table',null,'t'),h=el('tr');
+ for(const x of ['#',etf?'ETF':'Stock','Score','Weight','Price','12 months','Why']){const th=el('th',x);if(['Score','Weight','Price','12 months'].includes(x))th.className='n';h.append(th)}
+ const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+ for(const p of rows){const tr=el('tr'),n=el('td'),a=tkLink(p.ticker);n.append(a,el('div',p.name+(p.category?' · '+p.category.replace('_',' '):''),'mut sm'));
+  const why=el('td');for(const r of p.reasons)why.append(el('div',r,'sm'));why.append(chips(p.signals));
+  tr.append(el('td',String(p.rank)),n,el('td',p.score.toFixed(2),'n'),el('td',(p.weight*100).toFixed(0)+'%','n'),el('td','$'+p.price.toFixed(2),'n'),
+   el('td',sg(p.features.ret_12_1),'n '+(p.features.ret_12_1>=0?'up':'dn')),why);tb.append(tr)}
+ t.append(tb);const w=el('div',null,'tbl');w.append(t);return w}
+function sec(title,node,note){const s=el('section',null,'card');s.style.marginTop='1rem';s.append(el('h3',title),node);if(note)s.append(el('div',note,'note'));return s}
+function curve(c){const W=820,H=240,L=44,B=22,T=8,ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.setAttribute('width','100%');
+ const all=Object.values(c.models).flat(),lo=Math.min(...all)*.98,hi=Math.max(...all)*1.02,n=c.dates.length,X=i=>L+i*(W-L-8)/Math.max(n-1,1),Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+ const mk=(t,a)=>{const e=document.createElementNS(ns,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+ const col={picks_rule:'#1fa3ff',equal_weight:'#8497b5',benchmark:'#f0524f'};
+ for(let g=0;g<=3;g++){const v=lo+(hi-lo)*g/3,y=Y(v);svg.append(mk('line',{x1:L,x2:W-8,y1:y,y2:y,stroke:'#16263f'}));const t=mk('text',{x:L-5,y:y+4,'text-anchor':'end',fill:'#8497b5','font-size':11});t.textContent=v.toFixed(2);svg.append(t)}
+ for(const k in c.models)svg.append(mk('path',{d:c.models[k].map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' '),fill:'none',stroke:col[k],'stroke-width':k==='picks_rule'?2.4:1.4,'stroke-dasharray':k==='benchmark'?'4 3':'0'}));
+ for(const i of [0,n-1]){const t=mk('text',{x:X(i),y:H-5,'text-anchor':i?'end':'start',fill:'#8497b5','font-size':11});t.textContent=c.dates[i];svg.append(t)}
+ const box=el('div');box.append(svg);return box}
+function render(d){const w=el('div');
+ w.append(sec('Top '+d.stocks.length+' stocks',pickTable(d.stocks,false),'Among the '+d.pool.stocks+' most widely held stocks of the top funds ('+d.pool.stocks_scored+' passed the filters). Weights: inverse volatility, at most '+Math.round(d.method.max_weight*100)+'% each. Prices as of '+d.as_of+'.'));
+ w.append(sec('Top '+d.etfs.length+' ETFs',pickTable(d.etfs,true),'From '+d.pool.etfs+' ETFs (broad catalogue plus those the funds hold); leveraged and inverse funds excluded; at most '+d.method.max_per_category+' per category; identical index funds listed once.'));
+ const bt=d.backtest;
+ if(bt){const m=bt.models,rows=[['picks_rule','The rule (top '+bt.params.top_n+', price signals only)'],['equal_weight','Equal weights, same stocks'],['benchmark','S&P 500']];
+  const t=el('table',null,'t'),h=el('tr');['Model','Annual return','Volatility','Sharpe','Max drawdown','Costs paid'].forEach((x,i)=>{const th=el('th',x);if(i)th.className='n';h.append(th)});const th=el('thead');th.append(h);t.append(th);const tb=el('tbody');
+  for(const [k,l] of rows){const tr=el('tr');tr.append(el('td',l),el('td',pc(m[k].ann_return),'n'),el('td',pc(m[k].ann_vol),'n'),el('td',sh(m[k].sharpe),'n'),el('td',pc(m[k].max_drawdown),'n'),el('td',pc(m[k].cost_total),'n'));tb.append(tr)}
+  t.append(tb);const tw=el('div',null,'tbl');tw.append(t);const box=el('div');box.append(tw,curve(bt.curves));
+  w.append(sec('Did the price part of the rule work in the past? ('+bt.periods.start+' to '+bt.periods.end+')',box,bt.caveat+' Fixed in advance, monthly, '+bt.params.cost_bps+' bps costs; nothing was tuned on this period.'))}
+ else w.append(sec('Backtest of the rule',el('div',d.backtest_error||'Not available','mut')));
+ const how=el('div');for(const [k,v] of Object.entries(d.method.stock_weights)){how.append(el('div',SIGNAME[k]+': '+Math.round(v*100)+'% of a stock\'s score','sm'))}
+ how.append(el('div','A stock must trade above its 200-day average to be listed; share classes and near-duplicates are listed once.','sm mut'));
+ if(d.skipped_notes.length){const dd=el('details');dd.append(el('summary','Skipped for being duplicates or over the category limit ('+d.skipped_notes.length+')'));for(const x of d.skipped_notes)dd.append(el('div',x,'sm mut'));how.append(dd)}
+ w.append(sec('How the ranking works',how,d.notice));return w}
+$('view').append(perfView('picks',render));
+"""
+
+_PICKS_CSS = r"""
+.sm{font-size:.78rem}.chips{display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.25rem}
+.sig{font-size:.62rem;font-weight:700;padding:.05rem .4rem;border-radius:5px;background:#12233d}.sig.up{color:#22c58b}.sig.dn{color:#f0524f}
+td .sm{max-width:560px}
+"""
+
+
+def render_picks():
+    return shell("Top picks", "picks", _PICKS_BODY, _PICKS_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS + _PICKS_CSS)

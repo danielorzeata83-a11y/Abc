@@ -102,3 +102,36 @@ def insiders_board(insiders, prices, days=180, min_buy=25_000, min_balance_trade
     big = [t for t in trades if t["value"] >= min_balance_trade and t.get("owned_after")]
     prices.warm(sorted({t["symbol"] for t in buys} | {t["symbol"] for t in big} | {"SPY"}))
     return {"performance": insider_buy_performance(buys, prices), "holdings": insider_holdings(big, prices)[:50]}
+
+
+def picks_board(overview_fn, prices, insiders, politicians, adjusted_get, years=5, backtest_n=40):
+    """Today's top stocks and ETFs plus an out-of-sample test of the price part of the rule (the picks are kept if the test fails)."""
+    import pandas as pd
+    from sensa.lab_data import load_prices
+    from sensa.picks import build_picks
+    from sensa.picks_backtest import rank_backtest
+
+    def trades(src):
+        if src is None:
+            return []
+        try:
+            return src.trades_since(90)
+        except DataUnavailable:
+            return []
+    overview = overview_fn()
+    out = build_picks(overview, prices, trades(insiders), trades(politicians))
+    held = sorted((s for s in overview["stocks"] if s["kind"] in ("stock", "adr") and not s.get("gone") and not s.get("new_listing")),
+                  key=lambda s: (s["holders"], s["value"]), reverse=True)[:backtest_n]
+    try:
+        P, manifest = load_prices([s["ticker"] for s in held], lambda t: adjusted_get(t, years), min_rows=700)
+        bench = None
+        try:
+            bench = pd.Series(dict(adjusted_get("SPY", years)))
+        except DataUnavailable:
+            pass
+        out["backtest"] = rank_backtest(P, benchmark=bench)
+        out["backtest"]["dropped"] = manifest["dropped"]
+        out["backtest_error"] = None
+    except (DataUnavailable, ValueError) as e:
+        out["backtest"], out["backtest_error"] = None, str(e)[:300]
+    return out

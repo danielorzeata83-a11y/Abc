@@ -30,7 +30,7 @@ from sensa.insiders import InsiderService
 from sensa.investors import InvestorService, UnknownTicker
 from sensa.managers import browse
 from sensa.politicians import PoliticiansService
-from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_lab, render_stock, render_latest_filings,
+from sensa.ui import (BASE_CSS, LINK_JS, NAV_CSS, nav, render_alerts, render_dark_pool, render_filing, render_insiders, render_institutional, render_investors, render_lab, render_picks, render_stock, render_latest_filings,
                       render_manager, render_managers, render_political, render_smart_money)
 
 DISCLAIMER = "Research artifact - not investment advice."
@@ -289,6 +289,9 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     self._send(404, "not found", "text/plain")
                 else:
                     self._send(200, render_investors(parts[1].upper()), "text/html; charset=utf-8")
+                return
+            if u.path.rstrip("/") == "/picks":
+                self._send(200, render_picks(), "text/html; charset=utf-8")
                 return
             if u.path.rstrip("/") == "/portfolio-lab":
                 self._send(200, render_lab(), "text/html; charset=utf-8")
@@ -700,15 +703,21 @@ class Perf:
 def build_perf(smart, insiders, politicians):
     if smart is None:
         return None
-    from sensa.perf_service import PerfJob, PortfolioService, funds_board, insiders_board, members_board
+    from sensa.perf_service import PerfJob, PortfolioService, funds_board, insiders_board, members_board, picks_board
     from sensa.prices import PriceBook
     from sensa.universe import load_overview
     d = smart.data_dir
     yc = YahooChart(http_fetch)
-    prices = PriceBook(lambda t: yc.candles(t, "1day"), cache_path=os.path.join(d, "prices.json"))
+    prices = PriceBook(lambda t: yc.candles(t, "1day"), cache_path=os.path.join(d, "prices.json"), retries=2, backoff=1.0)
     portfolio = PortfolioService(os.path.join(d, "holders.db"), os.path.join(d, "live13f.db"), smart.figi, prices)
     jobs = {"funds": PerfJob("pricing the top funds' portfolios", lambda: funds_board(load_overview(d), portfolio),
                              os.path.join(d, "perf_funds.json"))}
+    from sensa.lab_service import AdjustedCache
+    adj = AdjustedCache(lambda t, years: yc.adjusted(t, years), os.path.join(d, "lab", "adjusted_prices.json"))
+
+    def overview():
+        return load_overview(d)
+    jobs["picks"] = PerfJob("building the picks", lambda: picks_board(overview, prices, insiders, politicians, adj.get), os.path.join(d, "perf_picks.json"))
     if politicians is not None:
         jobs["members"] = PerfJob("pricing House trades", lambda: members_board(politicians, prices), os.path.join(d, "perf_members.json"))
     if insiders is not None:
