@@ -104,7 +104,8 @@ def _dedupe(ranked, keyfn, rets, corr_limit, notes):
 
 
 def build_picks(overview, prices, insider_trades, politician_trades, top_n=10, pool_n=300, min_holders=10, min_price=5.0,
-                max_weight=0.20, dedupe_corr=0.97, max_per_category=3, stock_weights=None, etf_weights=None):
+                max_weight=0.20, dedupe_corr=0.97, max_per_category=3, stock_weights=None, etf_weights=None,
+                fundamentals=None, fund_n=25, fund_weight=0.15):
     sw, ew = stock_weights or STOCK_WEIGHTS, etf_weights or ETF_WEIGHTS
     rows = overview["stocks"]
     ok = [s for s in rows if not s.get("gone") and not s.get("new_listing") and s["holders"] >= min_holders]
@@ -173,6 +174,8 @@ def build_picks(overview, prices, insider_trades, politician_trades, top_n=10, p
                        "features": {"ret_12_1": f["ret_12_1"], "ret_1m": f["ret_1m"], "vol": f["vol"], "drawdown": f["drawdown"]},
                        "reasons": reasons, "_closes": d["closes"], "_issuer": r["issuer"]})
     scored.sort(key=lambda x: -x["score"])
+    if fundamentals is not None:
+        _apply_fundamentals(scored, fundamentals, fund_n, fund_weight)
     rets = {p["ticker"]: _returns(p["_closes"]) for p in scored}
     picks = _dedupe(scored, lambda p: _company_key(p["_issuer"]), rets, dedupe_corr, notes)[:top_n]
     stocks = _finish(picks)
@@ -217,9 +220,49 @@ def build_picks(overview, prices, insider_trades, politician_trades, top_n=10, p
     return {"notice": NOTICE, "as_of": as_of[0], "stocks": stocks, "etfs": etfs, "pool_prices": pool_prices, "skipped": skipped, "skipped_etf": skipped_etf,
             "skipped_notes": notes[:40], "quarter": overview.get("quarter"),
             "pool": {"stocks": len(stock_rows), "etfs": len(etf_pool), "stocks_scored": len(scored), "etfs_scored": len(escored)},
-            "method": {"stock_weights": sw, "etf_weights": ew, "trend_rule": "price above its 200-day average", "min_price": min_price,
+            "method": {"fundamentals": {"weight": fund_weight, "applied_to_top": fund_n} if fundamentals is not None else None,
+                       "stock_weights": sw, "etf_weights": ew, "trend_rule": "price above its 200-day average", "min_price": min_price,
                        "max_weight": max_weight, "weighting": "inverse volatility, capped", "dedupe_corr": dedupe_corr,
                        "max_per_category": max_per_category}}
+
+
+def _apply_fundamentals(scored, get, n, weight):
+    """Valuation and quality for the top candidates only (one SEC download each): a small adjustment to the score, plus plain-language flags."""
+    top = scored[:n]
+    comps = {"ey": {}, "om": {}, "g": {}, "de": {}}
+    for p in top:
+        try:
+            f = get(p["ticker"], p["price"])
+        except Exception:                                   # one broken lookup must not lose the ranking
+            f = None
+        p["fundamentals"] = f
+        if not f:
+            continue
+        for k, key, lo, hi, sign in (("ey", "earnings_yield_pct", -10, 15, 1), ("om", "op_margin_pct", -20, 60, 1), ("g", "revenue_growth_pct", -30, 60, 1), ("de", "debt_to_equity", 0, 5, -1)):
+            v = f.get(key)
+            if v is not None:
+                comps[k][p["ticker"]] = sign * min(max(v, lo), hi)
+    zs = {k: zscores(v) if len(v) >= 3 else {} for k, v in comps.items()}
+    for p in top:
+        parts = [zs[k][p["ticker"]] for k in zs if zs[k].get(p["ticker"]) is not None]
+        vq = sum(parts) / len(parts) if len(parts) >= 2 else 0.0
+        p["score"] += weight * vq
+        p["signals"]["value_quality"] = round(vq, 2) if len(parts) >= 2 else None
+        f = p.get("fundamentals")
+        if not f:
+            continue
+        if f.get("eps_ttm") is not None and f["eps_ttm"] <= 0:
+            p["reasons"].append(f"Not profitable over the last 12 months (EPS ${f['eps_ttm']:.2f})")
+        elif f.get("pe"):
+            bits = [f"P/E {f['pe']:.0f}"]
+            if f.get("op_margin_pct") is not None:
+                bits.append(f"operating margin {f['op_margin_pct']:.0f}%")
+            if f.get("revenue_growth_pct") is not None:
+                bits.append(f"revenue {f['revenue_growth_pct']:+.0f}% last fiscal year")
+            if f.get("debt_to_equity") is not None:
+                bits.append(f"debt/equity {f['debt_to_equity']:.1f}")
+            p["reasons"].append(("Expensive: " if f["pe"] > 60 else "") + ", ".join(bits))
+    scored.sort(key=lambda x: -x["score"])
 
 
 def _finish(picks, max_weight=0.20):

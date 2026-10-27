@@ -525,6 +525,8 @@ def _make_handler(hub, watchlist, watcher=None, smart=None, insiders=None, darkp
                     payload = hub.quote(arg)
                 elif route == "company" and arg:
                     payload = hub.company(arg)
+                elif route == "fundamentals" and arg:
+                    payload = hub.fundamentals(arg)
                 elif route == "option-flow" and arg:
                     payload = hub.option_flow(arg)
                 elif route == "options" and arg:
@@ -660,19 +662,22 @@ def build_hub():
     fred = FredApi(os.environ.get("FRED_API_KEY", "").strip())
     sec = os.environ.get("SEC_CONTACT", "").strip()
     figi = Figi(post=lambda url, payload: http_post(url, payload))
-    company_fn = None
+    company_fn = fundamentals_fn = None
     if sec:
         from sensa.company import CompanyInfo
         from sensa.shares_out import SharesOutstanding
         ua = {"User-Agent": f"Abc-dashboard-research/1.0 {sec}"}
         sec_get = lambda url: http_fetch(url, ua)
         cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f")
-        company_fn = CompanyInfo(sec_get, SharesOutstanding(sec_get, os.path.join(cache_dir, "shares_out.json"))).get
+        info = CompanyInfo(sec_get, SharesOutstanding(sec_get, os.path.join(cache_dir, "shares_out.json")))
+        company_fn = info.get
+        from sensa.fundamentals import Fundamentals
+        fundamentals_fn = Fundamentals(sec_get, info.cik, os.path.join(cache_dir, "fundamentals.json")).get
     return Hub(Cboe(), news, fred.curve, analyst=Finnhub(key) if key else None,
                edgar=Edgar(sec, http_fetch) if sec else None, finra=Finra(http_fetch),
                candles_fn=make_candles_fn(data_dir, AlphaVantageDailyProvider(av) if av else None, secret=av,
                                           yahoo=YahooChart(http_fetch)),
-               thirteenf=ThirteenF(sec, http_fetch) if sec else None, figi=figi, company_fn=company_fn,
+               thirteenf=ThirteenF(sec, http_fetch) if sec else None, figi=figi, company_fn=company_fn, fundamentals_fn=fundamentals_fn,
                cache_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "13f"))
 
 
@@ -760,7 +765,13 @@ def build_perf(smart, insiders, politicians, watcher=None):
         return load_overview(d)
     from sensa.track_record import TrackRecord
     track = TrackRecord(os.path.join(d, "picks_history.json"))
-    jobs["picks"] = PerfJob("building the picks", lambda: picks_board(overview, prices, insiders, politicians, adj.get, track=track), os.path.join(d, "perf_picks.json"))
+    contact = os.environ.get("SEC_CONTACT", "").strip()
+    ua = {"User-Agent": f"Abc-dashboard-research/1.0 {contact}"}
+    from sensa.company import CompanyInfo
+    from sensa.fundamentals import Fundamentals
+    fundamentals = Fundamentals(lambda url: http_fetch(url, ua), CompanyInfo(lambda url: http_fetch(url, ua)).cik, os.path.join(d, "fundamentals.json")).get
+    jobs["picks"] = PerfJob("building the picks", lambda: picks_board(overview, prices, insiders, politicians, adj.get, track=track, fundamentals=fundamentals),
+                            os.path.join(d, "perf_picks.json"))
     if politicians is not None:
         jobs["members"] = PerfJob("pricing House trades", lambda: members_board(politicians, prices), os.path.join(d, "perf_members.json"))
     if insiders is not None:

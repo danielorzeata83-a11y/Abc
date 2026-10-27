@@ -104,7 +104,7 @@ def insiders_board(insiders, prices, days=180, min_buy=25_000, min_balance_trade
     return {"performance": insider_buy_performance(buys, prices), "holdings": insider_holdings(big, prices)[:50]}
 
 
-def picks_board(overview_fn, prices, insiders, politicians, adjusted_get, years=5, backtest_n=40, track=None):
+def picks_board(overview_fn, prices, insiders, politicians, adjusted_get, years=5, backtest_n=40, track=None, fundamentals=None):
     """Today's top stocks and ETFs plus an out-of-sample test of the price part of the rule (the picks are kept if the test fails)."""
     import pandas as pd
     from sensa.lab_data import load_prices
@@ -119,7 +119,7 @@ def picks_board(overview_fn, prices, insiders, politicians, adjusted_get, years=
         except DataUnavailable:
             return []
     overview = overview_fn()
-    out = build_picks(overview, prices, trades(insiders), trades(politicians))
+    out = build_picks(overview, prices, trades(insiders), trades(politicians), fundamentals=fundamentals)
     if track is not None:
         track.record(out)
         out["track_record"] = track.summary(prices)

@@ -56,3 +56,10 @@ def test_share_count_failure_is_not_fatal():
         def get(self, t):
             raise DataUnavailable("x")
     assert CompanyInfo(Sec(), Bad()).get("PEBO")["shares_outstanding"] is None
+
+
+def test_cik_lookup_uses_only_the_ticker_list():
+    sec = Sec()
+    ci = CompanyInfo(sec, Shares())
+    assert ci.cik("pebo") == "0001050441" and ci.cik("ZZZZ") is None
+    assert all("submissions" not in u for u in sec.urls)

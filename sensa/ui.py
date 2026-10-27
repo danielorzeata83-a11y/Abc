@@ -932,6 +932,7 @@ _STOCK_BODY = r"""
   </div>
   <div class="col">
    <section class="card" id="optc"><h3>Options overview</h3><div id="opts" class="mut">Loading…</div></section>
+   <section class="card" id="fundc"><h3>Valuation and quality</h3><div id="fund" class="mut">Loading…</div></section>
    <section class="card" id="flowc"><h3>Options flow</h3><div id="flow" class="mut">Loading…</div></section>
    <section class="card"><h3>Analyst consensus</h3><div id="analyst" class="mut">Loading…</div></section>
    <section class="card" id="instc"><h3>Top institutional holders</h3><div id="inst" class="mut">Matching the ticker to its 13F security… the first visit to a stock can take up to a minute.</div></section>
@@ -991,6 +992,11 @@ bars();
 (async()=>{const b=$('opts');try{const o=await api('/api/options/'+T);if(!o)return none(b,'No listed options');const c=o.cp;const m=x=>(x/1e6).toFixed(1)+'M';
  b.replaceChildren(kv([['Expiration',o.expiration+(o.zero_dte?' (0DTE)':'')],['Spot',px(o.spot)],['Net GEX per 1%',m(o.gex.net_gex),cls(o.gex.net_gex)],['Call GEX',m(o.gex.call_gex)],['Put GEX',m(o.gex.put_gex)],
   ['Call volume',num(c.call_volume)],['Put volume',num(c.put_volume)],['Put/Call volume',c.volume_ratio==null?'-':String(c.volume_ratio)],['Call/Put open int.',c.oi_ratio==null?'-':String(c.oi_ratio)],['Contracts',String(o.chain.length)]]))}catch(e){none(b,'No options data for this symbol (not optionable, or the feed is unavailable).')}})();
+(async()=>{const b=$('fund');try{const f=await api('/api/fundamentals/'+T);if(!f)return none(b,'No SEC financial data (ETFs, funds and many foreign issuers do not file it).');
+ const p=v=>v==null?'-':v.toFixed(1)+'%';
+ b.replaceChildren(kv([['P/E (last 12 months)',f.pe==null?(f.eps_ttm!=null&&f.eps_ttm<=0?'not profitable':'-'):f.pe.toFixed(1)],['Earnings yield',p(f.earnings_yield_pct)],['Revenue (12 months)',money(f.revenue_ttm)],
+  ['Revenue growth, last fiscal year',p(f.revenue_growth_pct)],['Operating margin',p(f.op_margin_pct)],['Net margin',p(f.net_margin_pct)],['Return on equity',p(f.roe_pct)],
+  ['Debt / equity',f.debt_to_equity==null?'-':f.debt_to_equity.toFixed(2)],['Net debt',money(f.net_debt)]]),el('div','SEC XBRL filings, period ending '+(f.period_end||'-')+'. Trailing 12 months = last fiscal year + this year to date - same period last year.','mut sm'))}catch(e){none(b,'Financial data unavailable.')}})();
 (async()=>{const b=$('flow');try{const f=await api('/api/option-flow/'+T);if(!f)return none(b,'No listed options');const d=el('div');
  for(const x of f.signals)d.append(el('div',x,'sm'));
  if(f.term.length){d.append(el('div','Implied volatility at the money',null));d.lastChild.style.cssText='margin-top:.6rem;font-weight:600';

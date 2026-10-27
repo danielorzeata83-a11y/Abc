@@ -154,3 +154,30 @@ def test_output_carries_the_prices_of_the_scored_pool_for_the_track_record():
     res = run([row("A", 60, 55), row("B", 61, 55)], {"A": walk(0.001, 0.002, seed=1), "B": walk(0.0012, 0.002, seed=2)}, top_n=2)
     assert set(res["pool_prices"]) == {"stocks", "etfs"} and set(res["pool_prices"]["stocks"]) == {"A", "B"}
     assert all(isinstance(v, float) for v in res["pool_prices"]["stocks"].values())
+
+
+def fund(pe=None, ey=None, om=None, g=None, de=None, eps=1.0):
+    return {"pe": pe, "earnings_yield_pct": ey, "op_margin_pct": om, "revenue_growth_pct": g, "debt_to_equity": de, "eps_ttm": eps, "net_margin_pct": 10.0, "revenue_ttm": 1e9}
+
+
+def test_fundamentals_rerank_the_top_candidates_and_add_valuation_reasons():
+    rows = [row("CHEAP", 70, 60), row("DEAR", 70, 60), row("LOSS", 70, 60)]
+    base = walk(0.0015, 0.002, seed=3)
+    series = {"CHEAP": base, "DEAR": list(base), "LOSS": list(base)}                 # identical prices: only the fundamentals can separate them
+    data = {"CHEAP": fund(pe=12, ey=8.3, om=30, g=15, de=0.3), "DEAR": fund(pe=90, ey=1.1, om=5, g=2, de=2.5), "LOSS": fund(pe=None, ey=-5, om=-20, g=-10, de=3.0, eps=-1.0)}
+    plain = run(rows, series, top_n=3, dedupe_corr=2.0)
+    with_f = build_picks(overview(rows), Book(series), [], [], top_n=3, dedupe_corr=2.0, fundamentals=lambda t, price: data.get(t))
+    order = [p["ticker"] for p in with_f["stocks"]]
+    assert order[0] == "CHEAP" and order[-1] in ("DEAR", "LOSS")
+    text = {p["ticker"]: " | ".join(p["reasons"]) for p in with_f["stocks"]}
+    assert "P/E 12" in text["CHEAP"] and "Expensive" in text["DEAR"] and "Not profitable" in text["LOSS"]
+    assert with_f["method"]["fundamentals"]["applied_to_top"] == 25 and with_f["stocks"][0]["fundamentals"]["pe"] == 12
+    assert "fundamentals" not in plain["method"] or plain["method"]["fundamentals"] is None
+
+
+def test_missing_fundamentals_leave_the_ranking_unchanged():
+    rows = [row("A", 70, 60), row("B", 65, 60)]
+    series = {"A": walk(0.0015, 0.002, seed=1), "B": walk(0.001, 0.002, seed=2)}
+    a = build_picks(overview(rows), Book(series), [], [], top_n=2)
+    b = build_picks(overview(rows), Book(series), [], [], top_n=2, fundamentals=lambda t, p: None)
+    assert [p["ticker"] for p in a["stocks"]] == [p["ticker"] for p in b["stocks"]]

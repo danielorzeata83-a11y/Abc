@@ -21,12 +21,12 @@ _STRIKE_BAND = 0.15   # show GEX strikes within +/-15% of spot
 
 class Hub:
     def __init__(self, cboe, news_fn, curve_fn, analyst=None, edgar=None, finra=None, candles_fn=None, thirteenf=None, figi=None, workers=6, cache_dir=None, accession_lookup=None, ttl=60,
-                 company_fn=None, clock=time.monotonic, today=lambda: date.today().isoformat()):
+                 company_fn=None, fundamentals_fn=None, clock=time.monotonic, today=lambda: date.today().isoformat()):
         self.cboe, self.news_fn, self.curve_fn, self.analyst_src = cboe, news_fn, curve_fn, analyst
         self.edgar, self.finra, self.candles_fn = edgar, finra, candles_fn
         self.thirteenf, self.figi, self.workers, self.cache_dir = thirteenf, figi, workers, cache_dir
         self.accession_lookup, self._reg_lock = accession_lookup, threading.Lock()
-        self.company_fn = company_fn
+        self.company_fn, self.fundamentals_fn = company_fn, fundamentals_fn
         self.ttl, self.clock, self.today, self._cache = ttl, clock, today, {}
 
     def _cached(self, key, load, ttl=None):
@@ -49,6 +49,13 @@ class Hub:
     def quote(self, symbol):
         s = symbol.upper()
         return self._cached(("q", s), lambda: self.cboe.quote(s))
+
+    def fundamentals(self, symbol):
+        """Valuation and quality at the current price (None when not configured or no SEC data)."""
+        if self.fundamentals_fn is None:
+            return None
+        s = symbol.upper()
+        return self.fundamentals_fn(s, self.quote(s)["price"])
 
     def company(self, symbol):
         """Name, exchange, industry and share count of a ticker (None when not configured or unknown)."""

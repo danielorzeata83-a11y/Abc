@@ -442,3 +442,14 @@ def test_option_flow_uses_the_full_chain_caches_it_and_is_none_without_options()
         def chain(self, sym):
             return 100.0, []
     assert make(cboe=Empty()).option_flow("X") is None
+
+
+def test_fundamentals_use_the_quote_price_and_the_injected_source():
+    seen = []
+
+    def fund(t, price):
+        seen.append((t, price))
+        return {"pe": price / 2}
+    hub = Hub(FakeCboe(), lambda s: [], lambda: None, fundamentals_fn=fund)
+    assert hub.fundamentals("aaa") == {"pe": 55.0} and seen == [("AAA", 110.0)]
+    assert make().fundamentals("AAA") is None

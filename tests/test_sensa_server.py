@@ -1146,3 +1146,22 @@ def test_option_flow_endpoint_and_stock_page_card():
     assert st == 200 and json.loads(body)["signals"][0].startswith("Put/call")
     assert go("/api/option-flow/NONE")[1].strip() == b"null"
     assert "/api/option-flow/" in srv.render_stock("AAPL") and "Options flow" in srv.render_stock("AAPL")
+
+
+def test_fundamentals_endpoint_and_stock_page_card():
+    class H(FakeHub):
+        def fundamentals(self, s):
+            return {"pe": 20.0, "revenue_ttm": 1e9} if s != "ETF" else None
+    server = srv.make_server(H(), "127.0.0.1", 0, ["AAA"])
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        c.request("GET", "/api/fundamentals/aapl")
+        r = c.getresponse()
+        assert r.status == 200 and json.loads(r.read())["pe"] == 20.0
+        c.request("GET", "/api/fundamentals/ETF")
+        assert c.getresponse().read().strip() == b"null"
+    finally:
+        server.shutdown()
+    html = srv.render_stock("AAPL")
+    assert "/api/fundamentals/" in html and "Valuation and quality" in html

@@ -16,6 +16,19 @@ class CompanyInfo:
         self._list = None
         self._cache = {}
 
+    def _row(self, t):
+        if self._list is None:
+            raw = json.loads(self.fetch(EXCHANGE_URL))
+            f = raw["fields"]
+            self._list = {r[f.index("ticker")].upper(): r for r in raw["data"]}
+        return self._list.get(t)
+
+    def cik(self, ticker):
+        """Zero-padded CIK of a ticker from SEC's ticker list (one cached download, no per-company request)."""
+        with self._lock:
+            row = self._row((ticker or "").strip().upper())
+        return f"{int(row[0]):010d}" if row else None
+
     def get(self, ticker):
         t = (ticker or "").strip().upper()
         with self._lock:
