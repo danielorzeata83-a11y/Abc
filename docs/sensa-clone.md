@@ -144,6 +144,25 @@ Se construiesc singure la pornire și se reîmprospătează la 6 ore (job în fu
 - **Rezultat real (39 de acțiuni, ian 2023 - oct 2026, universul ales azi = survivorship bias):** regula 27,1% pe an, Sharpe 1,27; ponderi egale
   30,6%, Sharpe 1,84; S&P 500 21,2%, Sharpe 1,37. Regula NU a bătut ponderile egale.
 
+## Valoare adăugată: Status, registru de picks, brief, portofoliul tău, fundamentale, opțiuni, regim, cercetare
+- **Status (`/health`):** joburile în fundal (stare, mesaj, ultima actualizare), sonde pe sursele gratuite (Cboe, Yahoo, SEC, OpenFIGI; cache 5 min) și ce chei
+  opționale sunt setate (niciodată valorile).
+- **Registru de picks (pe pagina Picks):** în fiecare zi se salvează lista (`picks_history.json`); se măsoară doar înainte: randamentul fiecărui snapshot față de
+  S&P 500 și față de tot grupul de acțiuni analizate, medii pe vechime (7+/30+ zile). Fără hindsight; snapshot-urile se suprapun, deci dovada vine încet.
+- **Brief zilnic (`/brief`):** ce a intrat/ieșit din top 10, cumpărări grupate de insideri (3+ persoane, 100k$+), achiziții ale mai multor membri House, depuneri ale
+  fondurilor urmărite, schimbarea regimului și avertismentele portofoliului tău. Elementele noi sunt marcate și trimise o singură dată pe Telegram (dacă e configurat).
+- **Portofoliul tău (`/my-portfolio`):** introduci TICKER acțiuni cost; rămâne local (`my_portfolio.json`). Valoare, profit, volatilitate, beta, pierderea în cele mai
+  proaste 5% zile, poziții efective, perechi corelate, ce fac fondurile/insiderii cu acțiunile tale, avertismente (concentrare, sub 200 de zile, −25% față de cost,
+  fonduri care vând, insideri care vând) și alternative (egal, invers volatilității, optimizare cu shrinkage și turnover mic) cu tranzacțiile implicate.
+- **Fundamentale (SEC XBRL):** P/E, marje, creștere, ROE, datorie pe pagina acțiunii; în Picks reordonează primii 25 candidați (pondere 15%) și adaugă avertismente
+  („Expensive", „Not profitable").
+- **Flux de opțiuni:** put/call, contracte neobișnuite (volum de 3x deschis, doar out-of-the-money și nu în aceeași zi), IV pe scadențe, mișcarea implicită, skew.
+- **Regim de piață:** S&P 500 față de media pe 200 de zile, căderea față de maximul pe 52 de săptămâni, volatilitate; plus testul regulii „stai pe lângă piață sub
+  media pe 200 de zile" pe 20 de ani (verdict: helped / mixed / did_not_help).
+- **Cercetare istorică point-in-time:** `sensa/signal_research.py`, `signal_history.py`, `research_job.py`. Descarcă ultimele 9 trimestre 13F și seturile de insideri,
+  reface lista fiecărui trimestru așa cum era publică (data = când 80% din top fonduri depuseseră) și măsoară corelația de rang (IC) și avantajul grupului de sus pe 1 și
+  3 luni pentru fiecare semnal. Ponderile din Picks se ajustează după dovezi doar cu cel puțin 6 trimestre: negativ → 0, nedovedit → jumătate, dovedit → întreg (×1,5 la t ≥ 3).
+
 ## Paginile instituționale (după structura originalului)
 - `/institutional-investor`: căutare după CIK, exemple, link la **Latest filings** și la toate literele.
 - `/institutional-investor/managers/<literă>` (a–z, `0` = cifre/simboluri): toți cei ~8.800 de declaranți 13F din ultimul trimestru
