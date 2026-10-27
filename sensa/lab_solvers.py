@@ -13,20 +13,21 @@ _EPS = 1e-3
 
 
 def project_capped_simplex(v, cap=1.0):
-    """Euclidean projection onto {w: 0 <= w <= cap, sum w = 1}."""
+    """Euclidean projection onto {w: 0 <= w <= cap, sum w = 1}, exact: w = clip(v - tau, 0, cap) where the piecewise-linear,
+    decreasing sum(tau) is interpolated between the breakpoints v_i and v_i - cap."""
     v = np.asarray(v, dtype=float)
     n = len(v)
     if cap * n < 1 - 1e-12:
         raise ValueError("cap too small: no fully-invested portfolio exists")
-    lo, hi = v.min() - cap - 1.0, v.max() + 1.0
-    for _ in range(100):
-        tau = (lo + hi) / 2
-        s = np.clip(v - tau, 0.0, cap).sum()
-        if s > 1:
-            lo = tau
-        else:
-            hi = tau
-    w = np.clip(v - (lo + hi) / 2, 0.0, cap)
+    taus = np.sort(np.concatenate([v, v - cap]))                     # ascending: sum(tau) decreases along it
+    sums = np.clip(v[None, :] - taus[:, None], 0.0, cap).sum(axis=1)
+    j = int(np.searchsorted(-sums, -1.0, side="left"))                # first breakpoint where the sum has dropped to <= 1
+    if j == 0:
+        tau = taus[0] + (sums[0] - 1.0) / max(np.count_nonzero((v - taus[0] > 0) & (v - taus[0] < cap)), 1)
+    else:
+        t0, t1, s0, s1 = taus[j - 1], taus[j], sums[j - 1], sums[j]
+        tau = t0 if s0 == s1 else t0 + (s0 - 1.0) / (s0 - s1) * (t1 - t0)
+    w = np.clip(v - tau, 0.0, cap)
     return w / w.sum()
 
 
