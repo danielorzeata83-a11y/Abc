@@ -28,7 +28,7 @@ footer.foot{color:var(--mut);font-size:.75rem;padding:1rem 1.25rem;border-top:1p
 @media(max-width:700px){.nav{padding:.5rem .6rem;overflow-x:auto}.wrap{padding:.7rem}}
 """
 
-NAV_ITEMS = (("dash", "/", "Dashboard"), ("picks", "/picks", "Picks"), ("smart", "/smart-money", "Smart Money"),
+NAV_ITEMS = (("dash", "/", "Dashboard"), ("picks", "/picks", "Picks"), ("brief", "/brief", "Brief"), ("smart", "/smart-money", "Smart Money"),
              ("inst", "/institutional-investor", "Funds"), ("insider", "/inside-trade", "Insiders"), ("dark", "/dark-pool", "Dark pool"), ("political", "/political-trades", "Politicians"),
              ("alerts", "/smart-money/alerts", "Alerts"), ("lab", "/portfolio-lab", "Lab"), ("health", "/health", "Status"))
 
@@ -1218,3 +1218,39 @@ load();setInterval(load,30000);
 
 def render_health():
     return shell("Status", "health", _HEALTH_BODY, _HEALTH_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)
+
+
+# ------------------------------------------------------------------ daily brief
+_BRIEF_BODY = r"""
+<div class="wrap">
+ <h1 class="title" style="font-size:2rem;margin:.1rem 0 .3rem">Daily brief</h1>
+ <p class="mut">What changed since the last look: picks that entered or left, insider cluster buys, House purchases, filings of funds you follow,
+ and warnings about your own portfolio. New items are highlighted and pushed to Telegram once if it is set up. Not investment advice.</p>
+ <div id="msg" class="err"></div><div id="view"></div>
+ <section class="card" style="margin-top:1rem"><h3>Earlier briefs</h3><div id="hist" class="mut">-</div></section>
+</div>
+"""
+
+_BRIEF_JS = r"""
+const $=id=>document.getElementById(id);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+async function load(){try{const r=await fetch('/api/brief'),j=await r.json();if(!r.ok)throw new Error(j.error||r.status);
+  const v=$('view');v.replaceChildren();
+  if(!j.latest){v.append(el('div','The first brief is built a few minutes after start-up, once the picks exist.','mut'));return}
+  const b=j.latest;v.append(el('div','Brief for '+b.date+' · '+b.new_count+' new item(s) · built '+b.generated.replace('T',' ').slice(0,16)+' UTC','mut'));
+  for(const s of b.sections){const c=el('section',null,'card');c.style.marginTop='1rem';c.append(el('h3',s.title));
+   if(!s.items.length)c.append(el('div','Nothing to report','mut'));
+   for(const it of s.items){const row=el('div',null,'row');row.style.cssText='display:flex;gap:.6rem;align-items:center;padding:.35rem 0;border-top:1px solid var(--line)';
+    if(it.new){const n=el('span','NEW','tag');n.style.cssText='background:#0c3b2c;color:#22c58b';row.append(n)}
+    if(it.severity==='warn'){const n=el('span','CHECK','tag');n.style.cssText='background:#3a2a0c;color:#ffb347';row.append(n)}
+    if(it.ticker){row.append(tkLink(it.ticker))}
+    const t=el('span',it.text);if(it.cik&&/^[0-9]{1,10}$/.test(it.cik)){const a=el('a',it.text);a.href='/institutional-investor/manager/'+it.cik;row.append(a)}else row.append(t);c.append(row)}
+   v.append(c)}
+  $('hist').replaceChildren(...(j.history.slice().reverse().slice(0,30).map(h=>el('div',h.date+' · built '+h.generated.replace('T',' ').slice(0,16)+' · '+h.new_count+' new','sm'))))}
+ catch(e){$('msg').textContent=e.message}}
+load();setInterval(load,300000);
+"""
+
+
+def render_brief():
+    return shell("Daily brief", "brief", _BRIEF_BODY, _BRIEF_JS, _MANAGER_CSS + _SM_CSS + _LIST_CSS)

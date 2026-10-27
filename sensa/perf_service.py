@@ -138,3 +138,27 @@ def picks_board(overview_fn, prices, insiders, politicians, adjusted_get, years=
     except (DataUnavailable, ValueError) as e:
         out["backtest"], out["backtest_error"] = None, str(e)[:300]
     return out
+
+
+def brief_board(picks_fn, track, insiders, politicians, watcher, service, notifier=None, extra_fn=None, days=14):
+    """Builds today's brief from the latest picks and the previous day's snapshot, stores it and pushes new alerts once."""
+    from sensa.brief import build_brief
+    picks = picks_fn()
+    snaps = [s for s in track.snapshots() if s["date"] < picks["as_of"]]
+
+    def trades(src):
+        if src is None:
+            return []
+        try:
+            return src.trades_since(days)
+        except DataUnavailable:
+            return []
+    try:
+        events = watcher.events() if watcher is not None else []
+    except DataUnavailable:
+        events = []
+    extra = extra_fn() if extra_fn else []
+    brief = service.store(build_brief(picks, snaps[-1] if snaps else None, trades(insiders), trades(politicians), events, extra=extra))
+    if notifier is not None:
+        service.notify(brief, notifier)
+    return brief

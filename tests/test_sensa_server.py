@@ -239,7 +239,7 @@ def test_every_page_script_is_syntactically_valid_javascript(tmp_path):
     pages = [srv.render_index(["AAA"]), srv.render_manager("0001609098"), srv.render_institutional(), srv.render_alerts(),
              srv.render_smart_money(), srv.render_managers("a"), srv.render_latest_filings(),
              srv.render_filing("000000000126000007"), srv.render_insiders(), srv.render_dark_pool(),
-             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab(), srv.render_picks(), srv.render_health()]
+             srv.render_political(), srv.render_investors("PEBO"), srv.render_stock("PEBO"), srv.render_lab(), srv.render_picks(), srv.render_health(), srv.render_brief()]
     for n, html in enumerate(pages):
         for m, script in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S)):
             f = tmp_path / f"p{n}_{m}.js"
@@ -1062,3 +1062,20 @@ def test_health_endpoint_and_page():
     st, body = go("/health")
     assert st == 200 and b"/api/health" in body and b"Status" in body
     assert "/health" in srv.render_alerts()
+
+
+def test_brief_endpoint_and_page():
+    class B:
+        def latest(self):
+            return {"date": "2026-10-26", "new_count": 1, "sections": [{"id": "picks", "title": "Picks", "items": [{"key": "k", "text": "NEW entered", "ticker": "NEW", "new": True}]}]}
+
+        def history(self):
+            return [{"date": "2026-10-26", "generated": "t", "new_count": 1}]
+    p = FakePerf()
+    p.brief = B()
+    st, body, _ = _perf_req("GET", "/api/brief", perf=p)
+    j = json.loads(body)
+    assert st == 200 and j["latest"]["new_count"] == 1 and j["history"][0]["date"] == "2026-10-26"
+    assert _perf_req("GET", "/api/brief", perf=None)[0] == 503
+    st, body, _ = _perf_req("GET", "/brief")
+    assert st == 200 and b"/api/brief" in body and "/brief" in srv.render_alerts()

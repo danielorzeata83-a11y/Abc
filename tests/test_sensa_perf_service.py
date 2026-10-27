@@ -154,3 +154,36 @@ def test_picks_board_records_a_snapshot_and_attaches_the_track_record(tmp_path):
     tr = TrackRecord(str(tmp_path / "h.json"))
     out = picks_board(lambda: pick_overview(rows), Book(series), None, None, lambda t, y: (_ for _ in ()).throw(DataUnavailable("x")), track=tr)
     assert out["track_record"]["snapshots"] == 1 and len(tr.snapshots()) == 1 and tr.snapshots()[0]["date"] == out["as_of"]
+
+
+from sensa.brief import BriefService
+from sensa.perf_service import brief_board
+from sensa.track_record import TrackRecord
+
+
+def test_brief_board_diffs_against_the_previous_snapshot_stores_and_notifies(tmp_path):
+    tr = TrackRecord(None)
+    tr.record({"as_of": "2026-10-23", "stocks": [{"ticker": "OLD", "weight": 1.0, "price": 1.0, "rank": 1}], "etfs": [], "pool_prices": {"stocks": {}, "etfs": {}}})
+    tr.record({"as_of": "2026-10-26", "stocks": [{"ticker": "NEW", "weight": 1.0, "price": 1.0, "rank": 1}], "etfs": [], "pool_prices": {"stocks": {}, "etfs": {}}})
+    picks = {"as_of": "2026-10-26", "stocks": [{"ticker": "NEW", "name": "New Corp", "rank": 1, "score": 1.0}], "etfs": []}
+
+    class Ins:
+        def trades_since(self, d):
+            return []
+
+    class W:
+        def events(self):
+            return []
+    svc, sent = BriefService(str(tmp_path / "b.json")), []
+    b = brief_board(lambda: picks, tr, Ins(), None, W(), svc, notifier=sent.append)
+    text = " ".join(i["text"] for s in b["sections"] for i in s["items"])
+    assert "NEW" in text and "entered" in text and "OLD" in text and "left" in text and len(sent) == 1
+    again = brief_board(lambda: picks, tr, Ins(), None, W(), svc, notifier=sent.append)
+    assert again["new_count"] == 0 and len(sent) == 1
+
+
+def test_brief_board_without_picks_says_so():
+    def none():
+        raise DataUnavailable("Performance numbers are not computed yet")
+    with pytest.raises(DataUnavailable):
+        brief_board(none, TrackRecord(None), None, None, None, BriefService(None))
